@@ -46,6 +46,10 @@
     
     .member-card { background: linear-gradient(135deg, #246A53, #1a4f3d); color: white; border-radius: 15px; padding: 20px; margin-bottom: 20px; border: 2px solid #fff; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
     
+    .member-info-row { margin-bottom: 8px; font-size: 15px; }
+    .member-info-label { opacity: 0.9; font-size: 14px; }
+    .member-info-val { font-weight: bold; font-size: 16px; color: #F0C239; margin-left: 5px; }
+
     .option-card { 
       border: 2px solid #fff; 
       padding: 15px; 
@@ -105,11 +109,13 @@
       padding: 15px; margin-bottom: 10px; border-radius: 5px;
       box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center;
     }
-    .booking-info { font-size: 14px; }
-    .booking-time { font-weight: bold; color: var(--primary); font-size: 16px; margin-bottom: 5px; display: block;}
+    .booking-info { font-size: 14px; display: flex; flex-direction: column; }
+    .booking-title { font-weight: bold; color: #333; font-size: 16px; margin-bottom: 4px; }
+    .booking-date { color: var(--primary); font-size: 14px; }
+
     .cancel-btn {
       background: var(--danger); color: white; border: none; padding: 8px 12px;
-      border-radius: 5px; cursor: pointer; font-size: 13px;
+      border-radius: 5px; cursor: pointer; font-size: 13px; margin-left: 10px;
     }
   </style>
 </head>
@@ -146,8 +152,21 @@
   <div id="view-main" class="view">
     <div class="member-card">
       <h3>Hi, <span id="userName">--</span></h3>
-      <p>目前方案：<span id="ui-plan-text" style="font-weight:bold; color: #F0C239;">--</span></p>
-      <p>剩餘課程: <span id="ui-course-balance">0</span> 堂 | 加時券: <span id="ui-ticket-balance">0</span> 張</p>
+      
+      <div class="member-info-row">
+        <span class="member-info-label">課程名稱：</span>
+        <span id="ui-plan-text" class="member-info-val">--</span>
+      </div>
+      
+      <div class="member-info-row">
+        <span class="member-info-label">剩餘課程：</span>
+        <span class="member-info-val"><span id="ui-course-balance">0</span> 堂</span>
+      </div>
+
+      <div class="member-info-row">
+        <span class="member-info-label">結構調整30分鐘抵用卷：</span>
+        <span class="member-info-val"><span id="ui-ticket-balance">0</span> 張</span>
+      </div>
     </div>
     
     <div id="history-section" style="margin-bottom: 20px; display:none;">
@@ -170,11 +189,11 @@
         <div class="ticket-box">
           <label>
             <input type="checkbox" id="courseUseTicket" onclick="event.stopPropagation(); updateCoursePlanLogic()"> 
-            使用加時券 (+30分)
+            使用結構調整抵用卷 (+30分)
           </label>
         </div>
         <div id="courseTicketHint" style="font-size:12px; color:var(--danger); display:none; margin-top:5px;">
-          ⚠️ 連續兩堂課不可使用加時券
+          ⚠️ 連續兩堂課不可使用抵用卷
         </div>
       </div>
     </div>
@@ -193,11 +212,11 @@
         <div class="ticket-box">
           <label>
             <input type="checkbox" id="singleUseTicket" onchange="updateSinglePlanLogic()" onclick="event.stopPropagation()"> 
-            使用加時券 (+30分)
+            使用結構調整抵用卷 (+30分)
           </label>
         </div>
         <div id="singleTicketHint" style="font-size:12px; color:var(--danger); display:none; margin-top:5px;">
-          ⚠️ 此方案不可使用加時券
+          ⚠️ 此方案不可使用抵用卷
         </div>
       </div>
     </div>
@@ -283,10 +302,27 @@
     document.getElementById('ui-course-balance').innerText = currentUser.courseBalance || currentUser.courses || 0;
     document.getElementById('ui-ticket-balance').innerText = currentUser.ticketBalance || currentUser.tickets || 0;
 
-    let plan = parseInt(currentUser.plan);
-    let planText = plan === 80 ? "🔥 高階方案 (80分)" : (plan === 50 ? "🌱 基礎方案 (50分)" : "未設定方案");
-    document.getElementById("ui-plan-text").innerText = planText;
-    document.getElementById("ui-course-btn-text").innerHTML = `💎 使用課程 (${plan||50}分)`;
+    // 修改 3: 根據課程名稱擷取時長
+    let rawPlanName = currentUser.planName || ""; 
+    let extractedDuration = 50; // 預設 50
+
+    // 正則表達式：抓取 "數字" 後面接著 "分鐘"、"分" 或 "min"
+    const match = rawPlanName.match(/(\d+)\s*(分鐘|分|min)/i);
+    
+    if (match) {
+        extractedDuration = parseInt(match[1]);
+    } else if (currentUser.plan) {
+        // 如果名稱抓不到，則嘗試使用舊欄位 plan
+        extractedDuration = parseInt(currentUser.plan);
+    }
+    
+    // 將抓取到的時長存入 currentUser 供後續邏輯使用
+    currentUser.parsedDuration = extractedDuration;
+
+    // 顯示課程名稱
+    document.getElementById("ui-plan-text").innerText = rawPlanName || "未設定方案";
+    // 更新按鈕文字為抓取到的時長
+    document.getElementById("ui-course-btn-text").innerHTML = `💎 使用課程 (${extractedDuration}分)`;
 
     const hasCourse = (currentUser.courseBalance > 0 || currentUser.courses > 0);
     const hasTicket = (currentUser.ticketBalance > 0 || currentUser.tickets > 0);
@@ -310,15 +346,10 @@
       tCheckSingle.disabled = false;
     }
 
-    // --- 關鍵修改：強制確保切換時，舊的隱藏，新的顯示 ---
     const loginView = document.getElementById('view-login');
     const mainView = document.getElementById('view-main');
-    
-    // 1. 先全部隱藏並移除 active
     loginView.style.display = 'none';
     loginView.classList.remove('active');
-    
-    // 2. 再顯示主畫面
     mainView.style.display = 'block';
     mainView.classList.add('active');
   }
@@ -347,7 +378,8 @@
     const ticketCheck = document.getElementById('courseUseTicket');
     const ticketHint = document.getElementById('courseTicketHint');
     
-    let baseDuration = parseInt(currentUser.plan) || 50; 
+    // 使用剛剛擷取到的時長
+    let baseDuration = currentUser.parsedDuration || 50; 
     let val = select.value; 
     let isTicket = ticketCheck.checked;
     
@@ -373,7 +405,7 @@
     let showDuration = serviceTime + ticketTime;
     
     useTicket = isTicket;
-    finalPlanDetailName = planText + (isTicket ? " + 加時券" : "");
+    finalPlanDetailName = planText + (isTicket ? " + 結構調整抵用卷" : "");
     setDuration(totalOccupied, showDuration);
   }
 
@@ -414,7 +446,7 @@
     let showDuration = serviceTime + ticketTime;
     
     useTicket = isTicket;
-    finalPlanDetailName = planText + (isTicket ? " + 加時券" : "");
+    finalPlanDetailName = planText + (isTicket ? " + 結構調整抵用卷" : "");
     setDuration(totalOccupied, showDuration);
   }
 
@@ -489,6 +521,7 @@
     });
   }
 
+  // 修改 2: 優化預約列表 (顯示課程名稱 + 修正日期重複)
   function loadBookingHistory() {
     const listDiv = document.getElementById('bookingList');
     const section = document.getElementById('history-section');
@@ -505,15 +538,19 @@
       res.bookings.forEach(b => {
         const item = document.createElement('div');
         item.className = 'booking-item';
-        let displayTime = b.start.split('T')[1] ? b.start.split('T')[1].substring(0,5) : b.start;
-        let displayDate = b.start.split('T')[0];
+        
+        // 修正日期邏輯：統一格式，移除多餘的 T 和秒數
+        // 假設後端傳來 "2026-01-22T16:30:00"
+        let rawStart = b.start.replace('T', ' '); 
+        let cleanTime = rawStart.substring(0, 16); // 取前 16 碼 => "2026-01-22 16:30"
 
+        // 結構：標題在上 (粗體)，日期在下
         item.innerHTML = `
           <div class="booking-info">
-            <span class="booking-time">${displayDate} ${displayTime}</span>
-            <span>${b.title}</span>
+            <div class="booking-title">${b.title}</div>
+            <div class="booking-date">📅 ${cleanTime}</div>
           </div>
-          <button class="cancel-btn" onclick="triggerCancel('${b.id}', '${displayDate} ${displayTime}')">取消</button>
+          <button class="cancel-btn" onclick="triggerCancel('${b.id}', '${cleanTime}')">取消</button>
         `;
         listDiv.appendChild(item);
       });
