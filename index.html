@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VIP 預約系統</title>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <style>
     /* --- CSS 樣式區 (v7.3.7 Fix) --- */
     :root { 
@@ -489,38 +490,99 @@
       }
     });
   }
-
-  function submitBooking() {
-    if(!selectedTime) return alert("請選擇時間");
+// 1. 修改後的預約函式 (使用 SweetAlert2)
+function submitBooking() {
+    if(!selectedTime) return Swal.fire('提示', '請選擇時間', 'warning');
     
     let planDesc = finalPlanDetailName;
-    let msg = `確認預約資訊：\n\n日期：${document.getElementById('datePicker').value}\n時間：${selectedTime}\n服務時長：${displayDuration} 分鐘\n項目：${planDesc}`;
+    // 使用 HTML 格式讓排版更好看
+    let msg = `
+      <b>日期：</b>${document.getElementById('datePicker').value}<br>
+      <b>時間：</b>${selectedTime}<br>
+      <b>時長：</b>${displayDuration} 分鐘<br>
+      <b>項目：</b>${planDesc}
+    `;
     
-    if(!confirm(msg)) return;
-    
-    sendRequest('createBooking', {
-      date: document.getElementById('datePicker').value,
-      time: selectedTime,
-      duration: occupiedDuration, 
-      name: currentUser.name,
-      phone: currentUser.phone,
-      lineUserId: lineUserId,
-      plan: selectedPlan, 
-      customPlanName: planDesc, 
-      useTicket: useTicket
-    }).then(res => {
-      if(res.success) {
-        alert("✅ 預約成功！\n已更新下方預約列表。");
-        document.getElementById('time-section').style.display = 'none';
-        document.getElementById('confirmBtn').style.display = 'none';
-        loadBookingHistory();
-        document.getElementById('history-section').scrollIntoView({behavior: 'smooth'});
-      } else {
-        alert("❌ 預約失敗：" + (res.error || "未知錯誤"));
+    // 改用 Swal.fire 取代 confirm
+    Swal.fire({
+      title: '確認預約資訊',
+      html: msg,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#246A53', // 配合您的主色調 (獵人綠)
+      cancelButtonColor: '#d33',
+      confirmButtonText: '確定預約',
+      cancelButtonText: '再想想'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        // 按下確定後才送出請求
+        sendRequest('createBooking', {
+          date: document.getElementById('datePicker').value,
+          time: selectedTime,
+          duration: occupiedDuration, 
+          name: currentUser.name,
+          phone: currentUser.phone,
+          lineUserId: lineUserId,
+          plan: selectedPlan, 
+          customPlanName: planDesc, 
+          useTicket: useTicket
+        }).then(res => {
+          if(res.success) {
+            // 成功訊息也改用美美的彈窗
+            Swal.fire({
+              title: '預約成功！',
+              text: '已更新下方預約列表。',
+              icon: 'success',
+              confirmButtonColor: '#246A53'
+            }).then(() => {
+              // 關閉彈窗後執行的動作
+              document.getElementById('time-section').style.display = 'none';
+              document.getElementById('confirmBtn').style.display = 'none';
+              loadBookingHistory();
+              document.getElementById('history-section').scrollIntoView({behavior: 'smooth'});
+            });
+          } else {
+            Swal.fire('預約失敗', res.error || "未知錯誤", 'error');
+          }
+        });
       }
     });
   }
 
+  // 2. 修改後的取消函式 (使用 SweetAlert2)
+  function triggerCancel(eventId, timeStr) {
+    Swal.fire({
+      title: '取消預約',
+      text: `確定要取消 ${timeStr} 的預約嗎？`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33', // 危險動作由紅色為主
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: '是的，取消它',
+      cancelButtonText: '保留'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        sendRequest('cancelBooking', {
+          eventId: eventId,
+          phone: currentUser.phone,
+          name: currentUser.name,
+          lineUserId: lineUserId
+        }).then(res => {
+          if(res.success) { 
+            Swal.fire({
+              title: '已取消',
+              text: '您的預約已成功取消',
+              icon: 'success',
+              confirmButtonColor: '#246A53'
+            });
+            loadBookingHistory(); 
+          } else { 
+            Swal.fire('取消失敗', res.error, 'error'); 
+          }
+        });
+      }
+    });
+  }
   // 修改 2: 優化預約列表 (顯示課程名稱 + 修正日期重複)
   function loadBookingHistory() {
     const listDiv = document.getElementById('bookingList');
@@ -557,18 +619,7 @@
     });
   }
 
-  function triggerCancel(eventId, timeStr) {
-    if(!confirm(`確定要取消 ${timeStr} 的預約嗎？`)) return;
-    sendRequest('cancelBooking', {
-      eventId: eventId,
-      phone: currentUser.phone,
-      name: currentUser.name,
-      lineUserId: lineUserId
-    }).then(res => {
-      if(res.success) { alert('✅ 取消成功！'); loadBookingHistory(); }
-      else { alert('❌ 取消失敗：' + res.error); }
-    });
-  }
+
 </script>
 
 </body>
