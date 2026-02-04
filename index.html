@@ -494,29 +494,20 @@
 function submitBooking() {
     if(!selectedTime) return Swal.fire('提示', '請選擇時間', 'warning');
     
-    let planDesc = finalPlanDetailName;
-    // 使用 HTML 格式讓排版更好看
-    let msg = `
-      <b>日期：</b>${document.getElementById('datePicker').value}<br>
-      <b>時間：</b>${selectedTime}<br>
-      <b>時長：</b>${displayDuration} 分鐘<br>
-      <b>項目：</b>${planDesc}
-    `;
+    // ... (省略中間組裝 msg 的程式碼) ...
     
-    // 改用 Swal.fire 取代 confirm
     Swal.fire({
       title: '確認預約資訊',
       html: msg,
       icon: 'question',
       showCancelButton: true,
-      confirmButtonColor: '#246A53', // 配合您的主色調 (獵人綠)
-      cancelButtonColor: '#d33',
       confirmButtonText: '確定預約',
-      cancelButtonText: '再想想'
-    }).then((result) => {
-      if (result.isConfirmed) {
-        // 按下確定後才送出請求
-        sendRequest('createBooking', {
+      cancelButtonText: '再想想',
+      // ▼▼▼ 重點：加入 loader ▼▼▼
+      showLoaderOnConfirm: true, 
+      preConfirm: async () => {
+        // 在這裡發送請求，Swal 會自動顯示轉圈圈
+        return sendRequest('createBooking', {
           date: document.getElementById('datePicker').value,
           time: selectedTime,
           duration: occupiedDuration, 
@@ -526,29 +517,21 @@ function submitBooking() {
           plan: selectedPlan, 
           customPlanName: planDesc, 
           useTicket: useTicket
-        }).then(res => {
-          if(res.success) {
-            // 成功訊息也改用美美的彈窗
-            Swal.fire({
-              title: '預約成功！',
-              text: '已更新下方預約列表。',
-              icon: 'success',
-              confirmButtonColor: '#246A53'
-            }).then(() => {
-              // 關閉彈窗後執行的動作
-              document.getElementById('time-section').style.display = 'none';
-              document.getElementById('confirmBtn').style.display = 'none';
-              loadBookingHistory();
-              document.getElementById('history-section').scrollIntoView({behavior: 'smooth'});
-            });
-          } else {
-            Swal.fire('預約失敗', res.error || "未知錯誤", 'error');
-          }
         });
+      },
+      allowOutsideClick: () => !Swal.isLoading()
+    }).then((result) => {
+      // 請求完成後...
+      if (result.isConfirmed && result.value.success) {
+         Swal.fire('預約成功！', '已更新下方預約列表。', 'success').then(() => {
+             // ... 更新畫面邏輯 ...
+         });
+      } else if (result.isConfirmed && !result.value.success) {
+         Swal.fire('預約失敗', result.value.error || '未知錯誤', 'error');
       }
     });
   }
-
+  
   // 2. 修改後的取消函式 (使用 SweetAlert2)
   function triggerCancel(eventId, timeStr) {
     Swal.fire({
