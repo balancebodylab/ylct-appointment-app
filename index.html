@@ -7,7 +7,7 @@
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <style>
-    /* --- CSS 樣式區 (v7.3.7 Fix) --- */
+    /* --- CSS 樣式區 --- */
     :root { 
       --primary: #246A53;   /* 獵人深綠 */
       --accent: #F0C239;    /* 品牌金黃 */
@@ -32,7 +32,6 @@
       box-shadow: 0 0 20px rgba(0,0,0,0.1);
     }
 
-    /* 修正顯示邏輯：使用 !important 確保權重 */
     .view { display: none !important; padding: 20px; }
     .view.active { display: block !important; }
     
@@ -150,6 +149,7 @@
       <button class="btn" onclick="handleLogin()" style="font-size: 18px;">查詢 / 登入</button>
     </div>
   </div> 
+
   <div id="view-main" class="view">
     <div class="member-card">
       <h3>Hi, <span id="userName">--</span></h3>
@@ -229,9 +229,9 @@
     </div>
     
     <button id="confirmBtn" class="btn" style="display:none; margin-top:20px; box-shadow:0 0 15px rgba(0,0,0,0.2);" onclick="submitBooking()">確認預約</button>
-    <button onclick="location.reload()" style="width:100%; border:none; background:none; color:#555; margin-top:30px; cursor:pointer;">登出 / 重整</button>
+    <button onclick="logoutAndClear()" style="width:100%; border:none; background:none; color:#555; margin-top:30px; cursor:pointer; padding:10px;"> 登出</button>
   </div> 
-  </div>
+</div>
 
 <script>
   // ==========================================
@@ -240,6 +240,7 @@
   const MY_LIFF_ID = '2008933800-UrZptDbA'; 
   // ==========================================
 
+  // --- 全域變數 ---
   let currentUser = {};
   let lineUserId = '';
   let selectedPlan = '';
@@ -248,7 +249,12 @@
   let useTicket = false;
   let selectedTime = null;
   let finalPlanDetailName = ""; 
+  let currentBookingList = []; // 預約列表 (Runtime Cache)
+  
+  // 快取設定 (5分鐘)
+  const CACHE_DURATION = 5 * 60 * 1000; 
 
+  // --- 初始化 ---
   window.onload = function() {
     liff.init({ liffId: MY_LIFF_ID }).then(() => {
       if (liff.isLoggedIn()) {
@@ -262,9 +268,15 @@
     }).catch(e => {
       document.getElementById('status-msg').innerText = "LIFF 初始化失敗 (請檢查 ID)";
     });
-    document.getElementById('datePicker').min = new Date().toISOString().split('T')[0];
+    
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    document.getElementById('datePicker').min = `${yyyy}-${mm}-${dd}`;
   };
 
+  // --- API 請求 ---
   function sendRequest(action, data) {
     document.getElementById('loading-overlay').style.display = 'flex';
     data.action = action;
@@ -276,53 +288,98 @@
       })
       .catch(err => {
         document.getElementById('loading-overlay').style.display = 'none';
-        alert('連線忙碌中，請重試');
+        Swal.fire('連線錯誤', '網路忙碌中，請稍後重試', 'error');
         console.error(err);
         throw err;
       });
   }
 
+  // --- 登入邏輯 (含快取與清空) ---
   function handleLogin() {
     const phone = document.getElementById('loginPhone').value;
-    if(!phone) return alert("請輸入電話");
+    if(!phone) return Swal.fire('提示', '請輸入手機號碼', 'warning');
 
+    // 每次登入前，強制清空所有舊 Runtime 資料
+    currentBookingList = []; 
+    document.getElementById('bookingList').innerHTML = '';
+
+    // 檢查快取
+    const cachedData = getLocalUserData(phone);
+    if (cachedData) {
+      console.log("⚡️ 使用本機快取資料");
+      currentUser = cachedData;
+      renderMain();             
+      loadBookingHistory();     
+      return;                   
+    }
+
+    console.log("🐢 發送網路請求...");
     sendRequest('loginUser', { phone: phone }).then(res => {
       if(res.success) {
+        saveLocalUserData(phone, res.user); // 寫入快取
         currentUser = res.user;
         renderMain(); 
         loadBookingHistory(); 
       } else {
-        alert(res.message || "找不到此號碼");
-        if(!res.success && res.user) { currentUser = res.user; renderMain(); loadBookingHistory(); }
+        if(!res.success && res.user) { 
+          Swal.fire('提示', res.message || '歡迎新朋友', 'info');
+          currentUser = res.user; 
+          renderMain(); 
+          loadBookingHistory(); 
+        } else {
+          Swal.fire('錯誤', '登入失敗', 'error');
+        }
       }
     });
   }
 
+  // --- 快取輔助函式 ---
+  function getLocalUserData(phone) {
+    const key = 'vip_user_' + phone;
+    const jsonStr = localStorage.getItem(key);
+    if (!jsonStr) return null; 
+    try {
+      const data = JSON.parse(jsonStr);
+      const now = new Date().getTime();
+      if (now - data.timestamp > CACHE_DURATION) {
+        localStorage.removeItem(key); 
+        return null;
+      }
+      return data.user; 
+    } catch (e) { return null; }
+  }
+
+  function saveLocalUserData(phone, userObj) {
+    const key = 'vip_user_' + phone;
+    const data = { timestamp: new Date().getTime(), user: userObj };
+    localStorage.setItem(key, JSON.stringify(data));
+  }
+
+  // --- 登出並清除快取 ---
+  function logoutAndClear() {
+    if (currentUser && currentUser.phone) {
+      localStorage.removeItem('vip_user_' + currentUser.phone);
+    }
+    location.reload();
+  }
+
+  // --- 主畫面渲染 ---
   function renderMain() {
     document.getElementById('userName').innerText = currentUser.name;
     document.getElementById('ui-course-balance').innerText = currentUser.courseBalance || currentUser.courses || 0;
     document.getElementById('ui-ticket-balance').innerText = currentUser.ticketBalance || currentUser.tickets || 0;
 
-    // 修改 3: 根據課程名稱擷取時長
     let rawPlanName = currentUser.planName || ""; 
-    let extractedDuration = 50; // 預設 50
-
-    // 正則表達式：抓取 "數字" 後面接著 "分鐘"、"分" 或 "min"
+    let extractedDuration = 50; 
     const match = rawPlanName.match(/(\d+)\s*(分鐘|分|min)/i);
-    
     if (match) {
         extractedDuration = parseInt(match[1]);
     } else if (currentUser.plan) {
-        // 如果名稱抓不到，則嘗試使用舊欄位 plan
         extractedDuration = parseInt(currentUser.plan);
     }
-    
-    // 將抓取到的時長存入 currentUser 供後續邏輯使用
     currentUser.parsedDuration = extractedDuration;
 
-    // 顯示課程名稱
     document.getElementById("ui-plan-text").innerText = rawPlanName || "未設定方案";
-    // 更新按鈕文字為抓取到的時長
     document.getElementById("ui-course-btn-text").innerHTML = `💎 使用課程 (${extractedDuration}分)`;
 
     const hasCourse = (currentUser.courseBalance > 0 || currentUser.courses > 0);
@@ -347,14 +404,11 @@
       tCheckSingle.disabled = false;
     }
 
-    const loginView = document.getElementById('view-login');
-    const mainView = document.getElementById('view-main');
-    loginView.style.display = 'none';
-    loginView.classList.remove('active');
-    mainView.style.display = 'block';
-    mainView.classList.add('active');
+    document.getElementById('view-login').classList.remove('active');
+    document.getElementById('view-main').classList.add('active');
   }
 
+  // --- 選單與計算邏輯 ---
   function selectOption(type) {
     selectedPlan = type;
     document.querySelectorAll('.option-card').forEach(e => e.classList.remove('selected'));
@@ -363,6 +417,9 @@
     document.getElementById('singleUseTicket').checked = false;
     useTicket = false;
     
+    // 切換方案時重置選單
+    resetSelection();
+
     if(type === 'COURSE') {
        document.getElementById('opt-course').classList.add('selected');
        updateCoursePlanLogic(); 
@@ -372,14 +429,21 @@
     }
   }
 
+  // --- 【功能】重置選單函式 ---
+  function resetSelection() {
+    selectedTime = null;
+    document.getElementById('datePicker').value = ''; 
+    document.getElementById('slotsContainer').innerHTML = ''; 
+    document.getElementById('confirmBtn').style.display = 'none'; 
+    document.getElementById('time-section').style.display = 'none'; 
+  }
+
   function updateCoursePlanLogic() {
     if(selectedPlan !== 'COURSE') return;
-
     const select = document.getElementById('coursePlanSelect');
     const ticketCheck = document.getElementById('courseUseTicket');
     const ticketHint = document.getElementById('courseTicketHint');
     
-    // 使用剛剛擷取到的時長
     let baseDuration = currentUser.parsedDuration || 50; 
     let val = select.value; 
     let isTicket = ticketCheck.checked;
@@ -388,14 +452,17 @@
     let planText = "";
     const hasTicket = (currentUser.ticketBalance > 0 || currentUser.tickets > 0);
 
+    // ▼▼▼ 修改重點：改回使用固定的 "課程扣抵" 文字 ▼▼▼
     if (val === '1') {
-      planText = `課程扣抵 (1堂 ${baseDuration}分)`;
+      planText = `課程扣抵 (1堂 ${baseDuration}分)`; // 不再顯示 2025新年優惠...
+
       if(hasTicket) { ticketCheck.disabled = false; ticketCheck.parentElement.style.opacity = "1"; }
       ticketHint.style.display = "none";
       if(isTicket) { serviceTime = baseDuration; ticketTime = 30; bufferTime = 10; } 
       else { serviceTime = baseDuration; bufferTime = 10; }
     } else if (val === '2') {
       planText = `課程扣抵 (連續2堂 ${baseDuration*2}分)`;
+
       ticketCheck.checked = false; ticketCheck.disabled = true;
       ticketCheck.parentElement.style.opacity = "0.5"; ticketHint.style.display = "block";
       isTicket = false;
@@ -404,15 +471,14 @@
 
     let totalOccupied = serviceTime + ticketTime + bufferTime;
     let showDuration = serviceTime + ticketTime;
-    
     useTicket = isTicket;
+    
     finalPlanDetailName = planText + (isTicket ? " + 結構調整抵用卷" : "");
     setDuration(totalOccupied, showDuration);
   }
 
   function updateSinglePlanLogic() {
     if(selectedPlan !== 'SINGLE') return;
-
     const select = document.getElementById('singlePlanSelect');
     const ticketCheck = document.getElementById('singleUseTicket');
     const ticketHint = document.getElementById('singleTicketHint');
@@ -445,7 +511,6 @@
 
     let totalOccupied = serviceTime + ticketTime + bufferTime;
     let showDuration = serviceTime + ticketTime;
-    
     useTicket = isTicket;
     finalPlanDetailName = planText + (isTicket ? " + 結構調整抵用卷" : "");
     setDuration(totalOccupied, showDuration);
@@ -454,13 +519,12 @@
   function setDuration(occupied, display) {
     occupiedDuration = occupied; 
     displayDuration = display;   
-    
     document.getElementById('finalDuration').innerText = display;
     document.getElementById('time-section').style.display = 'block';
-    
     if(document.getElementById('datePicker').value) fetchSlots();
   }
 
+  // --- 時段查詢 ---
   function fetchSlots() {
     const date = document.getElementById('datePicker').value;
     if(!date) return;
@@ -471,7 +535,7 @@
     sendRequest('getAvailableSlots', { date: date, duration: occupiedDuration }).then(res => {
       div.innerHTML = '';
       if(res.status === 'FULL') {
-        div.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:red;">本日已額滿</div>';
+        div.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--danger);">本日已額滿</div>';
       } else if(!res.slots || res.slots.length === 0) {
         div.innerHTML = '<div style="grid-column:1/-1; text-align:center;">無符合時段</div>';
       } else {
@@ -490,56 +554,152 @@
       }
     });
   }
-// 1. 修改後的預約函式 (使用 SweetAlert2)
-function submitBooking() {
-    if(!selectedTime) return Swal.fire('提示', '請選擇時間', 'warning');
-    
-    // ... (省略中間組裝 msg 的程式碼) ...
-    
-    Swal.fire({
-      title: '確認預約資訊',
-      html: msg,
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonText: '確定預約',
-      cancelButtonText: '再想想',
-      // ▼▼▼ 重點：加入 loader ▼▼▼
-      showLoaderOnConfirm: true, 
-      preConfirm: async () => {
-        // 在這裡發送請求，Swal 會自動顯示轉圈圈
-        return sendRequest('createBooking', {
-          date: document.getElementById('datePicker').value,
-          time: selectedTime,
-          duration: occupiedDuration, 
-          name: currentUser.name,
-          phone: currentUser.phone,
-          lineUserId: lineUserId,
-          plan: selectedPlan, 
-          customPlanName: planDesc, 
-          useTicket: useTicket
-        });
-      },
-      allowOutsideClick: () => !Swal.isLoading()
-    }).then((result) => {
-      // 請求完成後...
-      if (result.isConfirmed && result.value.success) {
-         Swal.fire('預約成功！', '已更新下方預約列表。', 'success').then(() => {
-             // ... 更新畫面邏輯 ...
-         });
-      } else if (result.isConfirmed && !result.value.success) {
-         Swal.fire('預約失敗', result.value.error || '未知錯誤', 'error');
+
+  // --- 預約列表渲染 ---
+  function renderBookingList() {
+    const container = document.getElementById('bookingList');
+    if (!container) return;
+
+    document.getElementById('history-section').style.display = 'block';
+    container.innerHTML = ''; 
+
+    if (!currentBookingList || currentBookingList.length === 0) {
+      container.innerHTML = '<div class="text-center" style="color:#666; padding:10px;">目前沒有預約</div>';
+      return;
+    }
+
+    currentBookingList.sort((a, b) => new Date(a.start) - new Date(b.start));
+
+    let html = '';
+    currentBookingList.forEach(booking => {
+      const isTemp = booking.id && booking.id.toString().startsWith('temp_');
+      const statusLabel = isTemp ? '<span style="color:green; font-weight:bold; font-size:12px; margin-left:5px;">(新!)</span>' : '';
+      
+      let displayStart = booking.start.replace('T', ' ').substring(0, 16); 
+      let displayEnd = booking.end ? booking.end : ""; 
+      let timeString = displayEnd ? `${displayStart.split(' ')[1]} - ${displayEnd}` : displayStart;
+      
+      html += `
+        <div class="booking-item" style="${isTemp ? 'border-left-color:#28a745;' : ''}">
+          <div class="booking-info">
+             <div class="booking-title">${booking.title} ${statusLabel}</div>
+             <div class="booking-date">📅 ${displayStart.split(' ')[0]} <span style="margin-left:5px; color:#333;">${timeString}</span></div>
+          </div>
+          ${!isTemp ? `<button class="cancel-btn" onclick="cancelBooking('${booking.id}', '${displayStart}')">取消</button>` : ''}
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+  }
+
+  // --- 讀取歷史紀錄 ---
+  function loadBookingHistory() {
+    const listDiv = document.getElementById('bookingList');
+    if (currentBookingList.length === 0) {
+      listDiv.innerHTML = '<div style="text-align:center; color:#666;">載入中...</div>';
+    }
+    document.getElementById('history-section').style.display = 'block';
+
+    sendRequest('getBookingHistory', { phone: currentUser.phone }).then(res => {
+      if(res.success) {
+        currentBookingList = res.bookings;
+        renderBookingList();
+      } else {
+        listDiv.innerHTML = '<div style="text-align:center; color:#666;">無法讀取紀錄</div>';
       }
     });
   }
-  
-  // 2. 修改後的取消函式 (使用 SweetAlert2)
-  function triggerCancel(eventId, timeStr) {
+
+  // --- 預約確認 (樂觀更新) ---
+  function submitBooking() {
+    if (!selectedTime) {
+      Swal.fire('提示', '請先選擇一個時間時段', 'warning');
+      return;
+    }
+    
+    const dateStr = document.getElementById('datePicker').value;
+    // 格式： 2025新年優惠... (1堂 50分)
+    const realCourseName = `${currentUser.planName || '課程'} (1堂 ${currentUser.parsedDuration}分)`;
+
+    const reqData = {
+      date: dateStr,
+      time: selectedTime,
+      duration: occupiedDuration,
+      name: currentUser.name,
+      phone: currentUser.phone,
+      lineUserId: lineUserId,
+      plan: selectedPlan,
+      customPlanName: finalPlanDetailName || selectedPlan, // 這是 "課程扣抵..."
+      realCourseName: realCourseName, // 這是 "2025新年優惠..."
+      useTicket: useTicket
+    };
+    Swal.fire({
+      title: '確認預約資訊',
+      html: `
+        <div style="text-align:left; font-size:15px; line-height:1.6;">
+          <p><strong>日期：</strong>${reqData.date}</p>
+          <p><strong>時間：</strong>${reqData.time} (${displayDuration}分鐘)</p>
+          <p><strong>方案：</strong>${reqData.customPlanName}</p>
+        </div>
+      `,
+      icon: 'info',
+      showCancelButton: true,
+      confirmButtonText: '確定預約',
+      cancelButtonText: '取消',
+      confirmButtonColor: '#246A53',
+      showLoaderOnConfirm: true,
+      preConfirm: async () => {
+        return sendRequest('createBooking', reqData);
+      },
+      allowOutsideClick: () => !Swal.isLoading()
+    }).then((result) => {
+      if (result.isConfirmed && result.value.success) {
+        
+        // 1. 樂觀更新列表
+        let endH = parseInt(reqData.time.split(':')[0]);
+        let endM = parseInt(reqData.time.split(':')[1]) + parseInt(displayDuration);
+        while (endM >= 60) { endH++; endM -= 60; }
+        const endTimeStr = `${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
+
+        const newTempBooking = {
+          id: 'temp_' + Date.now(),
+          title: reqData.customPlanName, // 這裡顯示 "課程扣抵 (1堂 50分)..." 而不是 "[預約] 名字"
+          start: `${reqData.date} ${reqData.time}`,
+          end: endTimeStr
+        };
+
+        currentBookingList.push(newTempBooking);
+        renderBookingList();
+
+        Swal.fire({
+          title: '預約成功！',
+          text: '您的預約已新增至列表',
+          icon: 'success',
+          timer: 2000,
+          showConfirmButton: false
+        });
+
+        // 2. 重置選單 (修正問題1)
+        resetSelection();
+        
+        // 3. 預約成功後清除會員快取 (因為點數可能變動)
+        localStorage.removeItem('vip_user_' + currentUser.phone);
+
+      } else if (result.isConfirmed && !result.value.success) {
+        Swal.fire('預約失敗', result.value.error || '發生未知錯誤', 'error');
+      }
+    });
+  }
+
+  // --- 【修正】取消預約：從快取移除 + 重繪 ---
+  function cancelBooking(eventId, timeStr) {
     Swal.fire({
       title: '取消預約',
       text: `確定要取消 ${timeStr} 的預約嗎？`,
       icon: 'warning',
       showCancelButton: true,
-      confirmButtonColor: '#d33', // 危險動作由紅色為主
+      confirmButtonColor: '#A73520',
       cancelButtonColor: '#3085d6',
       confirmButtonText: '是的，取消它',
       cancelButtonText: '保留'
@@ -552,13 +712,22 @@ function submitBooking() {
           lineUserId: lineUserId
         }).then(res => {
           if(res.success) { 
+            // 1. 直接從本地陣列移除 (不用等 loadBookingHistory)
+            currentBookingList = currentBookingList.filter(b => b.id !== eventId);
+            
+            // 2. 重新渲染
+            renderBookingList();
+
             Swal.fire({
               title: '已取消',
               text: '您的預約已成功取消',
               icon: 'success',
               confirmButtonColor: '#246A53'
             });
-            loadBookingHistory(); 
+
+            // 3. 取消成功後清除會員快取 (因為點數通常會退回)
+            localStorage.removeItem('vip_user_' + currentUser.phone);
+            
           } else { 
             Swal.fire('取消失敗', res.error, 'error'); 
           }
@@ -566,44 +735,6 @@ function submitBooking() {
       }
     });
   }
-  // 修改 2: 優化預約列表 (顯示課程名稱 + 修正日期重複)
-  function loadBookingHistory() {
-    const listDiv = document.getElementById('bookingList');
-    const section = document.getElementById('history-section');
-    
-    listDiv.innerHTML = '<div style="text-align:center; color:#666;">載入中...</div>';
-    section.style.display = 'block';
-
-    sendRequest('getBookingHistory', { phone: currentUser.phone }).then(res => {
-      listDiv.innerHTML = ''; 
-      if (!res.bookings || res.bookings.length === 0) {
-        listDiv.innerHTML = '<div style="text-align:center; color:#666; padding:10px;">目前沒有未來的預約</div>';
-        return;
-      }
-      res.bookings.forEach(b => {
-        const item = document.createElement('div');
-        item.className = 'booking-item';
-        
-        // 修正日期邏輯：統一格式，移除多餘的 T 和秒數
-        // 假設後端傳來 "2026-01-22T16:30:00"
-        let rawStart = b.start.replace('T', ' '); 
-        let cleanTime = rawStart.substring(0, 16); // 取前 16 碼 => "2026-01-22 16:30"
-
-        // 結構：標題在上 (粗體)，日期在下
-        item.innerHTML = `
-          <div class="booking-info">
-            <div class="booking-title">${b.title}</div>
-            <div class="booking-date">📅 ${cleanTime}</div>
-          </div>
-          <button class="cancel-btn" onclick="triggerCancel('${b.id}', '${cleanTime}')">取消</button>
-        `;
-        listDiv.appendChild(item);
-      });
-    });
-  }
-
-
 </script>
-
 </body>
 </html>
