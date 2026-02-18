@@ -619,9 +619,7 @@
     }
     
     const dateStr = document.getElementById('datePicker').value;
-    // 格式： 2025新年優惠... (1堂 50分)
-    const realCourseName = `${currentUser.planName || '課程'} (1堂 ${currentUser.parsedDuration}分)`;
-
+    
     const reqData = {
       date: dateStr,
       time: selectedTime,
@@ -631,7 +629,7 @@
       lineUserId: lineUserId,
       plan: selectedPlan,
       customPlanName: finalPlanDetailName || selectedPlan, // 這是 "課程扣抵..."
-      realCourseName: realCourseName, // 這是 "2025新年優惠..."
+      baseCourseName: currentUser.planName || '課程',      // NEW! 這是 "2025新年方案"
       useTicket: useTicket
     };
     Swal.fire({
