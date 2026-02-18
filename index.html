@@ -296,8 +296,12 @@
 
   // --- 登入邏輯 (含快取與清空) ---
   function handleLogin() {
+    console.time("login_total_user_experience"); // 全程計時開始
     const phone = document.getElementById('loginPhone').value;
-    if(!phone) return Swal.fire('提示', '請輸入手機號碼', 'warning');
+    if(!phone) {
+      console.timeEnd("login_total_user_experience");
+      return Swal.fire('提示', '請輸入手機號碼', 'warning');
+    }
 
     // 每次登入前，強制清空所有舊 Runtime 資料
     currentBookingList = []; 
@@ -309,12 +313,15 @@
       console.log("⚡️ 使用本機快取資料");
       currentUser = cachedData;
       renderMain();             
-      loadBookingHistory();     
+      loadBookingHistory();  
+      console.timeEnd("login_total_user_experience"); // 全程計時結束 (快取)
       return;                   
     }
 
     console.log("🐢 發送網路請求...");
+    console.time("login_server_roundtrip"); // 網路來回計時開始
     sendRequest('loginUser', { phone: phone }).then(res => {
+      console.timeEnd("login_server_roundtrip"); // 網路來回計時結束
       if(res.success) {
         saveLocalUserData(phone, res.user); // 寫入快取
         currentUser = res.user;
@@ -330,6 +337,7 @@
           Swal.fire('錯誤', '登入失敗', 'error');
         }
       }
+      console.timeEnd("login_total_user_experience"); // 全程計時結束 (網路)
     });
   }
 
