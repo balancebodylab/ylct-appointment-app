@@ -231,16 +231,20 @@
     });
   }
 
-  // --- 點擊「我要預約」 ---
+// --- 點擊「我要預約」 ---
   function goToBooking() {
     if (!isLoginChecked) {
-      // 如果背景檢查還沒做完，擋一下並轉圈圈
-      Swal.fire({ title: '載入中', text: '正在同步會員資料...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+      // 【修正】改用系統原生遮罩，避免 Swal 視窗每 0.5 秒狂閃爍
+      document.getElementById('loading-overlay').style.display = 'flex';
+      document.getElementById('loading-text').innerText = '正在同步會員資料...';
+      
       setTimeout(goToBooking, 500); // 0.5秒後再檢查一次
       return;
     }
     
-    Swal.close();
+    // 檢查完畢，關閉 Loading 遮罩並把文字改回來
+    document.getElementById('loading-overlay').style.display = 'none';
+    document.getElementById('loading-text').innerText = '資料處理中...';
     
     // 如果是新客，跳出歡迎訊息
     if (isNewUser) {
@@ -256,7 +260,6 @@
     if (!isNewUser) loadBookingHistory(); // 老客戶才載入歷史紀錄
     switchView('view-main');
   }
-
   // --- 核心改動：送出預約並攔截註冊 ---
   function submitBooking() {
     if (!selectedTime) {
