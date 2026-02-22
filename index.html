@@ -17,7 +17,9 @@
     .view.active { display: block !important; opacity: 1; }
     
     /* Loading */
-    #loading-view { display: flex !important; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; background: #fff; z-index: 999; }
+    /* Loading */
+    #loading-view { flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; background: #fff; z-index: 999; }
+    #loading-view.active { display: flex !important; }
     .spinner { border: 4px solid #f3f3f3; border-top: 4px solid var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 10px; }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
@@ -284,7 +286,7 @@
   // --- 主畫面渲染 ---
   function renderMain() {
     // 修正：如果系統抓不到名字，預設使用 LINE 暱稱，再抓不到才顯示 VIP
-    document.getElementById('userName').innerText = currentUser.name || lineDisplayName || 'VIP';
+    document.getElementById('userName').innerText = currentUser.name || lineDisplayName || '新朋友';
     
     document.getElementById('ui-course-balance').innerText = currentUser.courseBalance || currentUser.courses || 0;
     document.getElementById('ui-ticket-balance').innerText = currentUser.ticketBalance || currentUser.tickets || 0;
