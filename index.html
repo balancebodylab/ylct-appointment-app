@@ -139,6 +139,7 @@
 </div>
 
 <script>
+
   // ==========================================
   // 【請確認】您的 GAS 網址與 LIFF ID
   const GAS_URL = "https://script.google.com/macros/s/AKfycbwcGU8Sjw1feT6J-clxiDlUSEEzjahIFg_lMR64RlLqKwVH4-zqMty9z7Nk6IK8e2O7Mg/exec";
@@ -286,7 +287,7 @@
   // --- 主畫面渲染 ---
   function renderMain() {
     // 修正：如果系統抓不到名字，預設使用 LINE 暱稱，再抓不到才顯示 VIP
-    document.getElementById('userName').innerText = currentUser.name || lineDisplayName || '新朋友';
+    document.getElementById('userName').innerText = currentUser.name || lineDisplayName || 'VIP';
     
     document.getElementById('ui-course-balance').innerText = currentUser.courseBalance || currentUser.courses || 0;
     document.getElementById('ui-ticket-balance').innerText = currentUser.ticketBalance || currentUser.tickets || 0;
@@ -586,5 +587,65 @@
 
         currentBookingList.push(newTempBooking);
         renderBookingList();
+
+        Swal.fire({
+          title: '預約成功！',
+          text: '您的預約已新增至列表',
+          icon: 'success',
+          timer: 2000,
+          showConfirmButton: false
+        });
+
+        resetSelection();
+        
+        // 修正：使用正確的 LineID Key 清除快取，確保點數更新
+        localStorage.removeItem('vip_line_' + lineUserId);
+
+      } else if (result.isConfirmed && !result.value.success) {
+        Swal.fire('預約失敗', result.value.error || '發生未知錯誤', 'error');
+      }
+    });
+  }
+
+  function cancelBooking(eventId, timeStr) {
+    Swal.fire({
+      title: '取消預約',
+      text: `確定要取消 ${timeStr} 的預約嗎？`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#A73520',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: '是的，取消它',
+      cancelButtonText: '保留'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        sendRequest('cancelBooking', {
+          eventId: eventId,
+          phone: currentUser.phone,
+          name: currentUser.name || lineDisplayName,
+          lineUserId: lineUserId
+        }).then(res => {
+          if(res.success) { 
+            currentBookingList = currentBookingList.filter(b => b.id !== eventId);
+            renderBookingList();
+
+            Swal.fire({
+              title: '已取消',
+              text: '您的預約已成功取消',
+              icon: 'success',
+              confirmButtonColor: '#246A53'
+            });
+
+            // 修正：使用正確的 LineID Key 清除快取，確保點數更新
+            localStorage.removeItem('vip_line_' + lineUserId);
+            
+          } else { 
+            Swal.fire('取消失敗', res.error, 'error'); 
+          }
+        });
+      }
+    });
+  }
+</script>
 </body>
 </html>
