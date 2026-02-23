@@ -1,81 +1,159 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>VIP 預約系統</title>
+  <title>筋摩獵人 VIP 預約系統</title>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <style>
-    /* --- CSS 樣式區 --- */
+    /* =========================================
+       🎨 全局色彩與變數設定 
+       ========================================= */
     :root { 
-      --primary: #246A53; --accent: #F0C239; --bg-white: #ffffff; 
-      --brown: #A88462; --danger: #A73520; --gray-light: #f9f9f9; 
+      --primary: #2d5a4c;     /* 獵人深綠 */
+      --accent: #e5b94b;      /* 品牌芥末黃 */
+      --bg-color: #e5b94b;    /* 系統背景色 */
+      --card-bg: #ffffff;     /* 卡片白 */
+      --card-bg-light: #fdfaf2; /* 未選取時的淺黃白 */
+      --text-main: #333333;   /* 主要文字 */
+      --text-muted: #666666;  /* 次要文字 */
+      --danger-btn: #8e3e26;  /* 磚紅取消按鈕 */
+      --border-radius: 12px;  /* 統一圓角大小 */
     }
 
     body { 
-      margin: 0; padding: 0; font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; 
-      background: var(--bg-white); color: #333; -webkit-tap-highlight-color: transparent; 
+      margin: 0; padding: 0; 
+      font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; 
+      background-color: var(--bg-color); /* 滿版黃色背景 */
+      color: var(--text-main); 
+      -webkit-tap-highlight-color: transparent; 
     }
 
+    /* 容器設定 (移除白色背景，讓內容浮在黃色背景上) */
     .container { 
       max-width: 600px; margin: 0 auto; min-height: 100vh; 
-      background: var(--accent); padding-bottom: 50px; box-shadow: 0 0 20px rgba(0,0,0,0.1); 
+      padding: 20px 15px 50px 15px; box-sizing: border-box;
     }
 
-    .view { display: none !important; padding: 20px; opacity: 0; transition: opacity 0.3s ease-in-out; }
+    .view { display: none !important; opacity: 0; transition: opacity 0.3s ease-in-out; }
     .view.active { display: block !important; opacity: 1; }
     
-    /* Loading 遮罩 (僅用於 API 請求時) */
+    /* Loading 遮罩 */
     #loading-overlay { 
       position: fixed; top:0; left:0; width:100%; height:100%; 
-      background:rgba(255,255,255,0.9); display:none; flex-direction:column; 
-      justify-content:center; align-items:center; z-index:999; 
+      background:rgba(255,255,255,0.95); display:none; flex-direction:column; 
+      justify-content:center; align-items:center; z-index:9999; 
     }
-    .spinner { border: 4px solid #f3f3f3; border-top: 4px solid var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 10px; }
+    .spinner { 
+      border: 4px solid #f3f3f3; border-top: 4px solid var(--primary); 
+      border-radius: 50%; width: 45px; height: 45px; 
+      animation: spin 1s linear infinite; margin-bottom: 15px; 
+    }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-    .btn { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight:bold; cursor: pointer; margin-top: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: 0.2s;}
-    .btn:active { transform: scale(0.98); opacity: 0.9; }
-    input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+    /* 通用按鈕 */
+    .btn { 
+      width: 100%; padding: 15px; background: var(--primary); color: white; 
+      border: none; border-radius: 8px; font-size: 16px; font-weight:bold; 
+      cursor: pointer; margin-top: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.15); 
+      transition: all 0.2s ease; letter-spacing: 1px;
+    }
+    .btn:active { transform: scale(0.97); box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
 
-    /* 首頁樣式 */
-    .home-card { background: #fff; padding: 25px; border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.08); text-align: center; }
-    .home-card img.logo { width: 120px; margin-bottom: 15px; }
-    .home-card h3 { color: var(--primary); margin: 20px 0 10px 0; border-bottom: 2px solid var(--accent); padding-bottom: 5px; display: inline-block;}
-    .home-card p { color: #555; line-height: 1.6; text-align: left; font-size: 15px; }
+    /* =========================================
+       🏠 首頁設計 (view-home)
+       ========================================= */
+    .home-card { 
+      background: var(--card-bg); padding: 30px 20px; 
+      border-radius: 20px; box-shadow: 0 5px 20px rgba(0,0,0,0.1); 
+      text-align: center; margin-top: 10px;
+    }
+    .home-card img.logo { width: 130px; margin-bottom: 10px; }
+    .home-section-title {
+      color: var(--primary); font-size: 20px; font-weight: bold;
+      margin: 25px 0 15px 0; display: inline-block;
+      border-bottom: 3px solid var(--accent); padding-bottom: 5px;
+    }
+    .home-card p { color: var(--text-muted); line-height: 1.7; text-align: left; font-size: 15px; margin: 0 10px; }
+
+    /* =========================================
+       💳 會員主畫面設計 (view-main)
+       ========================================= */
+    /* 頂部深綠色會員卡 */
+    .member-card { 
+      background: var(--primary); color: white; 
+      border-radius: var(--border-radius); padding: 25px 20px; 
+      margin-bottom: 25px; border: 2px solid rgba(255,255,255,0.8); 
+      box-shadow: 0 4px 15px rgba(0,0,0,0.08); 
+    }
+    .member-card h3 { margin: 0 0 20px 0; font-size: 22px; letter-spacing: 1px; }
+    .member-info-row { margin-bottom: 10px; font-size: 15px; display: flex; align-items: center;}
+    .member-info-label { opacity: 0.9; font-size: 14px; width: 85px; }
+    .member-info-val { font-weight: bold; font-size: 17px; color: var(--accent); }
+
+    .section-title { color: var(--text-main); font-size: 18px; font-weight: bold; margin: 25px 0 15px 0; display: flex; align-items: center; gap: 5px; }
+
+    /* 預約項目卡片 */
+    .option-card { 
+      border: 3px solid transparent; padding: 18px; margin-bottom: 15px; 
+      border-radius: var(--border-radius); cursor: pointer; 
+      background: var(--card-bg-light); transition: all 0.25s ease; 
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    .option-card.selected { 
+      border-color: var(--primary); background: var(--card-bg); 
+      transform: translateY(-2px); box-shadow: 0 6px 15px rgba(45, 90, 76, 0.15); 
+    }
+    .option-card:not(.selected) { opacity: 0.85; }
+    .option-card:not(.selected) select, .option-card:not(.selected) input { pointer-events: none; opacity: 0.6; }
+
+    .option-card-title { color: var(--primary); font-size: 17px; display: block; margin-bottom: 12px; }
     
-    .member-card { background: linear-gradient(135deg, #246A53, #1a4f3d); color: white; border-radius: 15px; padding: 20px; margin-bottom: 20px; border: 2px solid #fff; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-    .member-info-row { margin-bottom: 8px; font-size: 15px; }
-    .member-info-label { opacity: 0.9; font-size: 14px; }
-    .member-info-val { font-weight: bold; font-size: 16px; color: #F0C239; margin-left: 5px; }
+    .plan-select { 
+      width: 100%; padding: 12px; margin-top: 5px; 
+      border: 1px solid #ddd; border-radius: 8px; 
+      font-size: 15px; background: #fff; outline: none;
+    }
+    .plan-select:focus { border-color: var(--primary); }
 
-    .option-card { border: 2px solid #fff; padding: 15px; margin-bottom: 10px; border-radius: 10px; cursor: pointer; background: #fff; transition: all 0.2s ease; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-    .option-card.selected { border: 3px solid var(--primary); transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
-    .option-card:not(.selected) { opacity: 0.7; }
-    .option-card:not(.selected) select, .option-card:not(.selected) input { pointer-events: none; background: var(--gray-light); }
+    .ticket-box { margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ccc; }
+    .ticket-box label { display: flex; align-items: center; cursor: pointer; font-size: 14px; color: var(--text-main); }
+    .ticket-box input[type="checkbox"] { width: 18px; height: 18px; margin: 0 10px 0 0; accent-color: var(--primary); cursor: pointer; }
 
-    .plan-select { width: 100%; padding: 10px; margin-top: 5px; border: 1px solid var(--brown); border-radius: 8px; font-size: 16px; background: #fff; }
-    .ticket-box { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ccc; display: flex; align-items: center; }
-    .ticket-box label { display: flex; align-items: center; cursor: pointer; width: 100%; }
-    .ticket-box input[type="checkbox"] { width: 20px; height: 20px; margin: 0 10px 0 0; accent-color: var(--primary); }
+    /* 預約紀錄清單 */
+    .booking-item { 
+      background: var(--card-bg); border-left: 6px solid var(--primary); 
+      padding: 15px 15px 15px 20px; margin-bottom: 12px; 
+      border-radius: 8px; box-shadow: 0 3px 8px rgba(0,0,0,0.05); 
+      display: flex; justify-content: space-between; align-items: center; 
+    }
+    .booking-title { font-weight: bold; color: var(--text-main); font-size: 16px; margin-bottom: 6px; }
+    .booking-date { color: var(--primary); font-size: 14px; display: flex; align-items: center; gap: 5px; }
+    .cancel-btn { 
+      background: var(--danger-btn); color: white; border: none; 
+      padding: 8px 16px; border-radius: 6px; cursor: pointer; 
+      font-size: 14px; font-weight: bold; transition: background 0.2s; 
+    }
+    .cancel-btn:hover { background: #73311e; }
 
+    /* 時間選擇網格 */
     .time-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 15px; }
-    .time-slot { padding: 10px; background: #fff; border: 2px solid var(--primary); color: var(--primary); border-radius: 8px; text-align: center; cursor: pointer; font-weight: bold; }
-    .time-slot.selected { background: var(--primary); color: #fff; }
-  
-    .booking-item { background: #fff; border-left: 6px solid var(--primary); padding: 15px; margin-bottom: 10px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; }
-    .booking-info { font-size: 14px; display: flex; flex-direction: column; }
-    .booking-title { font-weight: bold; color: #333; font-size: 16px; margin-bottom: 4px; }
-    .booking-date { color: var(--primary); font-size: 14px; }
-    .cancel-btn { background: var(--danger); color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; font-size: 13px; margin-left: 10px; }
+    .time-slot { 
+      padding: 12px 5px; background: #fff; border: 2px solid var(--primary); 
+      color: var(--primary); border-radius: 8px; text-align: center; 
+      cursor: pointer; font-weight: bold; font-size: 15px; transition: 0.2s;
+    }
+    .time-slot.selected { background: var(--primary); color: #fff; box-shadow: 0 4px 8px rgba(45, 90, 76, 0.3); }
+
+    input[type="date"] { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; background: #fff; outline: none;}
   </style>
 </head>
 <body>
 
 <div id="loading-overlay">
   <div class="spinner"></div>
-  <div id="loading-text" style="color:#666; font-weight:bold; margin-top:10px;">資料處理中...</div>
+  <div id="loading-text" style="color:var(--text-muted); font-weight:bold; font-size:16px;">正在透過 LINE 登入...</div>
 </div>
 
 <div class="container">
@@ -83,24 +161,25 @@
   <div id="view-home" class="view active">
     <div class="home-card">
       <img src="./images/Logo.PNG" alt="Logo" class="logo" onerror="this.style.display='none'">
-      
-      <h3>📢 店家公告</h3>
+      <br>
+      <div class="home-section-title">📢 店家公告</div>
       <p>
         歡迎來到筋摩獵人！<br>
         為提供更好的服務品質，請提前進行預約。<br>
         營業時間：10:00 - 22:00
       </p>
 
-      <h3>📅 本月休假表</h3>
-      <img src="./images/schedule.JPG"
+      <div class="home-section-title">📅 本月休假表</div>
+      <img src="https://via.placeholder.com/400x300/e5b94b/ffffff?text=休假表圖片" 
            alt="休假表" 
-           style="width: 100%; border-radius: 8px; border: 1px solid #eee; margin-bottom: 15px;">
+           style="width: 100%; border-radius: 10px; margin-bottom: 25px;">
 
-      <button class="btn" style="font-size: 18px; padding: 15px;" onclick="goToBooking()">我要預約</button>
+      <button class="btn" onclick="goToBooking()">我要預約</button>
     </div>
   </div>
 
   <div id="view-main" class="view">
+    
     <div class="member-card">
       <h3>Hi, <span id="userName">--</span></h3>
       <div class="member-info-row"><span class="member-info-label">課程名稱：</span><span id="ui-plan-text" class="member-info-val">--</span></div>
@@ -108,17 +187,17 @@
       <div class="member-info-row"><span class="member-info-label">抵用卷：</span><span class="member-info-val"><span id="ui-ticket-balance">0</span> 張</span></div>
     </div>
     
-    <div id="history-section" style="margin-bottom: 20px; display:none;">
-      <h3 style="color:#333; border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: 10px;">📅 我的預約</h3>
-      <div id="bookingList"></div>
+    <div id="history-section" style="margin-bottom: 30px; display:none;">
+      <div class="section-title">📅 我的預約</div>
+      <div id="bookingList" style="border-top: 1px solid rgba(0,0,0,0.1); padding-top: 15px;"></div>
     </div>
 
-    <h3 style="color:#333;">選擇預約項目</h3>
+    <div class="section-title">選擇預約項目</div>
     
     <div id="opt-course" class="option-card" onclick="selectOption('COURSE')">
-      <b id="ui-course-btn-text" style="color:var(--primary);">💎 使用課程 (--分)</b>
-      <div style="margin-top:5px;">
-        <label style="font-size:14px; color:#555;">選擇堂數：</label>
+      <b class="option-card-title" id="ui-course-btn-text">💎 使用課程 (--分)</b>
+      <div>
+        <label style="font-size:14px; color:var(--text-muted);">選擇堂數：</label>
         <select id="coursePlanSelect" class="plan-select" onchange="updateCoursePlanLogic()" onclick="event.stopPropagation()">
           <option value="1">🌿 1 堂課</option>
           <option value="2">🌿🌿 2 堂課</option>
@@ -126,14 +205,14 @@
         <div class="ticket-box">
           <label><input type="checkbox" id="courseUseTicket" onclick="event.stopPropagation(); updateCoursePlanLogic()"> 使用結構調整抵用卷 (+30分)</label>
         </div>
-        <div id="courseTicketHint" style="font-size:12px; color:var(--danger); display:none; margin-top:5px;">⚠️ 連續兩堂課不可使用抵用卷</div>
+        <div id="courseTicketHint" style="font-size:13px; color:#c62828; display:none; margin-top:8px;">⚠️ 連續兩堂課不可使用抵用卷</div>
       </div>
     </div>
 
     <div id="opt-single" class="option-card" onclick="selectOption('SINGLE')">
-      <b style="color:var(--primary);">💰 單次付費預約</b>
-      <div style="margin-top:10px;">
-        <label style="font-size:14px; color:#555;">選擇方案：</label>
+      <b class="option-card-title">💰 單次付費預約</b>
+      <div>
+        <label style="font-size:14px; color:var(--text-muted);">選擇方案：</label>
         <select id="singlePlanSelect" class="plan-select" onchange="updateSinglePlanLogic()" onclick="event.stopPropagation()">
           <option value="50_1">🌿 50分鐘 (單堂)</option>
           <option value="50_2">🌿🌿 50分鐘 (連續兩堂)</option>
@@ -142,50 +221,72 @@
         <div class="ticket-box">
           <label><input type="checkbox" id="singleUseTicket" onchange="updateSinglePlanLogic()" onclick="event.stopPropagation()"> 使用結構調整抵用卷 (+30分)</label>
         </div>
-        <div id="singleTicketHint" style="font-size:12px; color:var(--danger); display:none; margin-top:5px;">⚠️ 此方案不可使用抵用卷</div>
+        <div id="singleTicketHint" style="font-size:13px; color:#c62828; display:none; margin-top:8px;">⚠️ 此方案不可使用抵用卷</div>
       </div>
     </div>
 
-    <div id="time-section" style="display:none; margin-top:20px; background:#fff; padding:15px; border-radius:10px;">
-      <h3 style="margin-top:0;">選擇時間 (<span id="finalDuration">0</span>分鐘)</h3>
-      <input type="date" id="datePicker" onchange="fetchSlots()" style="background:#f9f9f9;">
+    <div id="time-section" style="display:none; margin-top:20px; background:var(--card-bg); padding:20px; border-radius:var(--border-radius); box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
+      <h3 style="margin:0 0 10px 0; color:var(--primary); font-size:18px;">選擇時間 (<span id="finalDuration">0</span>分鐘)</h3>
+      <input type="date" id="datePicker" onchange="fetchSlots()">
       <div id="slotsContainer" class="time-grid"></div>
     </div>
     
-    <button id="confirmBtn" class="btn" style="display:none; margin-top:20px; box-shadow:0 0 15px rgba(0,0,0,0.2);" onclick="submitBooking()">確認預約</button>
-    <button onclick="logoutAndClear()" style="width:100%; border:none; background:none; color:#555; margin-top:30px; cursor:pointer; padding:10px;">↻ 清除快取重整</button>
+    <button id="confirmBtn" class="btn" style="display:none; margin-top:25px; padding: 16px; font-size: 18px;" onclick="submitBooking()">確認預約</button>
+    
+    <button onclick="logoutAndClear()" style="width:100%; border:none; background:none; color:var(--text-muted); margin-top:40px; cursor:pointer; padding:10px; font-size: 14px;">↻ 清除快取重整</button>
   </div> 
 </div>
 
 <script>
   // ==========================================
+  // ⚙️ 系統設定區
+  // ==========================================
   const GAS_URL = "https://script.google.com/macros/s/AKfycbwcGU8Sjw1feT6J-clxiDlUSEEzjahIFg_lMR64RlLqKwVH4-zqMty9z7Nk6IK8e2O7Mg/exec";
   const MY_LIFF_ID = '2008933800-UrZptDbA'; 
-  // ==========================================
+  const CACHE_DURATION = 5 * 60 * 1000; 
 
+  // ==========================================
+  // ⏱️ 效能追蹤工具 (Console 專用)
+  // ==========================================
+  const perfLog = {
+    start: (label) => { console.log(`▶️ [啟動] ${label}...`); console.time(`⏱️ [耗時] ${label}`); },
+    end: (label) => { console.timeEnd(`⏱️ [耗時] ${label}`); console.log(`✅ [完成] ${label}`); }
+  };
+
+  // 全域狀態
   let currentUser = {};
   let lineUserId = '';
   let lineDisplayName = ''; 
-  let isNewUser = false; // 新增：判斷是否為新客
-  let isLoginChecked = false; // 新增：判斷背景登入是否完成
-
+  let isNewUser = false; 
+  let isLoginChecked = false; 
   let selectedPlan = '', occupiedDuration = 0, displayDuration = 0, useTicket = false, selectedTime = null, finalPlanDetailName = ""; 
   let currentBookingList = [];
-  const CACHE_DURATION = 5 * 60 * 1000; 
 
+  // ==========================================
+  // 🚀 1. 系統初始化
+  // ==========================================
   window.onload = function() {
+    console.log("==================================");
+    console.log("🌟 筋摩獵人 VIP 系統啟動");
+    console.log("==================================");
+    
+    perfLog.start('1. LIFF 初始化');
     liff.init({ liffId: MY_LIFF_ID }).then(() => {
+      perfLog.end('1. LIFF 初始化');
       if (liff.isLoggedIn()) {
+        perfLog.start('2. 獲取 LINE 使用者資訊');
         liff.getProfile().then(p => {
+          perfLog.end('2. 獲取 LINE 使用者資訊');
           lineUserId = p.userId;
           lineDisplayName = p.displayName; 
-          // 拿到 ID 後，背景偷偷執行登入檢查
           backgroundCheckLogin(lineUserId);
         });
       } else {
+        console.log("⚠️ 使用者未登入 LINE，執行跳轉...");
         liff.login(); 
       }
     }).catch(e => {
+      console.error("❌ LIFF Error:", e);
       Swal.fire('錯誤', 'LIFF 初始化失敗', 'error');
     });
 
@@ -193,24 +294,32 @@
     document.getElementById('datePicker').min = today.toISOString().split('T')[0];
   };
 
+  // ==========================================
+  // 🔄 2. 視圖切換與背景登入
+  // ==========================================
   function switchView(viewId) {
+    perfLog.start(`切換畫面至: ${viewId}`);
     document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
     setTimeout(() => {
        document.getElementById(viewId).classList.add('active');
        window.scrollTo(0, 0); 
+       perfLog.end(`切換畫面至: ${viewId}`);
     }, 50);
   }
 
-  // --- 核心改動：背景靜默檢查 ---
   function backgroundCheckLogin(uid) {
+    perfLog.start('3. 背景身分驗證 (快取/API)');
     const cachedData = getLocalUserData(uid);
     if (cachedData) {
+      console.log("⚡ [快取命中] 讀取本地會員資料");
       currentUser = cachedData;
       isNewUser = false;
       isLoginChecked = true;
+      perfLog.end('3. 背景身分驗證 (快取/API)');
       return;
     }
 
+    console.log("🌐 [快取未命中] 向伺服器請求會員資料...");
     sendRequest('loginByLine', { lineUserId: uid }, true).then(res => {
       isLoginChecked = true;
       if (res.success) {
@@ -218,101 +327,71 @@
         currentUser = res.user;
         isNewUser = false;
       } else {
-        // 登入失敗 -> 標記為新朋友
         isNewUser = true;
-        currentUser = {
-          name: lineDisplayName || '新朋友',
-          phone: '',
-          planName: '新客體驗',
-          courseBalance: 0,
-          ticketBalance: 0
-        };
+        currentUser = { name: lineDisplayName || '新朋友', phone: '', planName: '新客體驗', courseBalance: 0, ticketBalance: 0 };
       }
+      perfLog.end('3. 背景身分驗證 (快取/API)');
     });
   }
 
-// --- 點擊「我要預約」 ---
   function goToBooking() {
     if (!isLoginChecked) {
-      // 【修正】改用系統原生遮罩，避免 Swal 視窗每 0.5 秒狂閃爍
       document.getElementById('loading-overlay').style.display = 'flex';
       document.getElementById('loading-text').innerText = '正在同步會員資料...';
-      
-      setTimeout(goToBooking, 500); // 0.5秒後再檢查一次
+      setTimeout(goToBooking, 500); 
       return;
     }
     
-    // 檢查完畢，關閉 Loading 遮罩並把文字改回來
     document.getElementById('loading-overlay').style.display = 'none';
     document.getElementById('loading-text').innerText = '資料處理中...';
     
-    // 如果是新客，跳出歡迎訊息
     if (isNewUser) {
-      Swal.fire({
-        title: '歡迎新朋友 🎉',
-        text: '請直接選擇預約項目，稍後確認時會為您建立會員資料。',
-        icon: 'info',
-        confirmButtonColor: '#246A53'
-      });
+      Swal.fire({ title: '歡迎新朋友 🎉', text: '請直接選擇預約項目，稍後確認時會為您建立會員資料。', icon: 'info', confirmButtonColor: '#2d5a4c' });
     }
 
     renderMain();
-    if (!isNewUser) loadBookingHistory(); // 老客戶才載入歷史紀錄
+    if (!isNewUser) loadBookingHistory(); 
     switchView('view-main');
   }
-  // --- 核心改動：送出預約並攔截註冊 ---
+
+  // ==========================================
+  // 預約送出與註冊攔截
+  // ==========================================
   function submitBooking() {
-    if (!selectedTime) {
-      Swal.fire('提示', '請先選擇時間', 'warning');
-      return;
-    }
+    if (!selectedTime) return Swal.fire('提示', '請先選擇時間', 'warning');
 
     if (isNewUser) {
-      // 步驟 A：新客強制輸入姓名電話
       Swal.fire({
         title: '完成註冊以確認預約',
         html: `
           <div style="text-align: left;">
-            <p style="font-size: 14px; color: #666; margin-bottom: 10px;">為保障您的權益，請填寫真實姓名與手機。</p>
+            <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 10px;">為保障您的權益，請填寫真實姓名與手機。</p>
             <input id="swal-name" class="swal2-input" placeholder="您的姓名" value="${lineDisplayName || ''}" style="width: 85%; margin: 10px auto; display: block; font-size:16px;">
             <input id="swal-phone" type="tel" class="swal2-input" placeholder="您的手機號碼" style="width: 85%; margin: 10px auto; display: block; font-size:16px;">
           </div>
         `,
-        confirmButtonText: '註冊並繼續預約',
-        confirmButtonColor: '#246A53',
-        showCancelButton: true,
-        cancelButtonText: '取消',
+        confirmButtonText: '註冊並繼續預約', confirmButtonColor: '#2d5a4c', showCancelButton: true, cancelButtonText: '取消',
         preConfirm: () => {
-          const name = document.getElementById('swal-name').value.trim();
-          const phone = document.getElementById('swal-phone').value.trim();
+          const name = document.getElementById('swal-name').value.trim(), phone = document.getElementById('swal-phone').value.trim();
           if (!name || !phone) { Swal.showValidationMessage('請完整填寫姓名與電話'); return false; }
           return { name, phone };
         }
       }).then(result => {
-        if (result.isConfirmed) {
-          // 呼叫後端註冊
-          executeRegistrationAndBooking(result.value.name, result.value.phone);
-        }
+        if (result.isConfirmed) executeRegistrationAndBooking(result.value.name, result.value.phone);
       });
     } else {
-      // 步驟 B：老客戶直接進確認畫面
       showBookingConfirmDialog();
     }
   }
 
   function executeRegistrationAndBooking(name, phone) {
-    document.getElementById('loading-overlay').style.display = 'flex';
+    perfLog.start('會員註冊 API');
     sendRequest('registerNewUser', { lineUserId: lineUserId, name: name, phone: phone }).then(res => {
-      document.getElementById('loading-overlay').style.display = 'none';
+      perfLog.end('會員註冊 API');
       if (res.success) {
-        // 註冊成功，更新狀態並開啟確認預約視窗
-        isNewUser = false;
-        currentUser = res.user;
-        saveLocalUserData(lineUserId, currentUser);
+        isNewUser = false; currentUser = res.user; saveLocalUserData(lineUserId, currentUser);
         showBookingConfirmDialog(); 
-      } else {
-        Swal.fire('註冊失敗', '請稍後再試', 'error');
-      }
+      } else { Swal.fire('註冊失敗', '請稍後再試', 'error'); }
     });
   }
 
@@ -320,63 +399,47 @@
     const dateStr = document.getElementById('datePicker').value;
     const realCourseName = `${currentUser.planName || '課程'} (1堂 ${currentUser.parsedDuration || 50}分)`;
     const reqData = {
-      date: dateStr, time: selectedTime, duration: occupiedDuration,
-      name: currentUser.name || lineDisplayName, phone: currentUser.phone, lineUserId: lineUserId,
-      plan: selectedPlan, customPlanName: finalPlanDetailName || selectedPlan, 
-      realCourseName: realCourseName, useTicket: useTicket
+      date: dateStr, time: selectedTime, duration: occupiedDuration, name: currentUser.name || lineDisplayName, phone: currentUser.phone, lineUserId: lineUserId,
+      plan: selectedPlan, customPlanName: finalPlanDetailName || selectedPlan, realCourseName: realCourseName, useTicket: useTicket
     };
 
     Swal.fire({
       title: '確認預約資訊',
-      html: `
-        <div style="text-align:left; font-size:15px; line-height:1.6;">
-          <p><strong>日期：</strong>${reqData.date}</p>
-          <p><strong>時間：</strong>${reqData.time} (${displayDuration}分鐘)</p>
-          <p><strong>方案：</strong>${reqData.customPlanName}</p>
-        </div>
-      `,
-      icon: 'info', showCancelButton: true, confirmButtonText: '確定預約', cancelButtonText: '取消',
-      confirmButtonColor: '#246A53', showLoaderOnConfirm: true,
-      preConfirm: async () => { return sendRequest('createBooking', reqData); },
+      html: `<div style="text-align:left; font-size:15px; line-height:1.6;"><p><strong>日期：</strong>${reqData.date}</p><p><strong>時間：</strong>${reqData.time} (${displayDuration}分鐘)</p><p><strong>方案：</strong>${reqData.customPlanName}</p></div>`,
+      icon: 'info', showCancelButton: true, confirmButtonText: '確定預約', cancelButtonText: '取消', confirmButtonColor: '#2d5a4c', showLoaderOnConfirm: true,
+      preConfirm: async () => { 
+        perfLog.start('新增預約 API');
+        const res = await sendRequest('createBooking', reqData); 
+        perfLog.end('新增預約 API');
+        return res;
+      },
       allowOutsideClick: () => !Swal.isLoading()
     }).then((result) => {
       if (result.isConfirmed && result.value.success) {
-        
-        let endH = parseInt(reqData.time.split(':')[0]);
-        let endM = parseInt(reqData.time.split(':')[1]) + parseInt(displayDuration);
+        let endH = parseInt(reqData.time.split(':')[0]), endM = parseInt(reqData.time.split(':')[1]) + parseInt(displayDuration);
         while (endM >= 60) { endH++; endM -= 60; }
         const endTimeStr = `${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
 
-        currentBookingList.push({
-          id: 'temp_' + Date.now(), title: reqData.customPlanName,
-          start: `${reqData.date} ${reqData.time}`, end: endTimeStr
-        });
-        
+        currentBookingList.push({ id: 'temp_' + Date.now(), title: reqData.customPlanName, start: `${reqData.date} ${reqData.time}`, end: endTimeStr });
         renderBookingList();
         Swal.fire({ title: '預約成功！', text: '您的預約已新增至列表', icon: 'success', timer: 2000, showConfirmButton: false });
-        resetSelection();
-        localStorage.removeItem('vip_line_' + lineUserId);
-
-      } else if (result.isConfirmed && !result.value.success) {
-        Swal.fire('預約失敗', result.value.error || '發生未知錯誤', 'error');
-      }
+        resetSelection(); localStorage.removeItem('vip_line_' + lineUserId);
+      } else if (result.isConfirmed && !result.value.success) { Swal.fire('預約失敗', result.value.error || '發生未知錯誤', 'error'); }
     });
   }
 
-  // --- API 請求 (加入 isBackground 參數控制 Loading) ---
+  // ==========================================
+  // 🌐 共用 API 工具
+  // ==========================================
   function sendRequest(action, data, isBackground = false) {
     if (!isBackground) document.getElementById('loading-overlay').style.display = 'flex';
     data.action = action;
     return fetch(GAS_URL, { method: 'POST', body: JSON.stringify(data) })
       .then(res => res.json())
       .finally(() => { if (!isBackground) document.getElementById('loading-overlay').style.display = 'none'; })
-      .catch(err => {
-        if (!isBackground) Swal.fire('連線錯誤', '網路忙碌中', 'error');
-        throw err;
-      });
+      .catch(err => { if (!isBackground) Swal.fire('連線錯誤', '網路忙碌中', 'error'); throw err; });
   }
 
-  // --- 其餘輔助函式維持不變 ---
   function getLocalUserData(uid) {
     const key = 'vip_line_' + uid; const jsonStr = localStorage.getItem(key);
     if (!jsonStr) return null; 
@@ -385,179 +448,105 @@
   function saveLocalUserData(uid, userObj) { localStorage.setItem('vip_line_' + uid, JSON.stringify({ timestamp: new Date().getTime(), user: userObj })); }
   function logoutAndClear() { if (lineUserId) localStorage.removeItem('vip_line_' + lineUserId); location.reload(); }
 
+  // ==========================================
+  // 🎨 畫面渲染邏輯
+  // ==========================================
   function renderMain() {
+    perfLog.start('渲染主畫面 UI');
     let finalName = (currentUser.name || "").trim() || (lineDisplayName || "").trim() || 'VIP';
     document.getElementById('userName').innerText = finalName;
     document.getElementById('ui-course-balance').innerText = currentUser.courseBalance || 0;
     document.getElementById('ui-ticket-balance').innerText = currentUser.ticketBalance || 0;
 
-    let rawPlanName = currentUser.planName || ""; let extractedDuration = 50; 
+    let rawPlanName = currentUser.planName || "未命名課程"; let extractedDuration = 50; 
     const match = rawPlanName.match(/(\d+)\s*(分鐘|分|min)/i);
     if (match) extractedDuration = parseInt(match[1]); else if (currentUser.plan) extractedDuration = parseInt(currentUser.plan);
     currentUser.parsedDuration = extractedDuration;
 
-    document.getElementById("ui-plan-text").innerText = rawPlanName || "未設定方案";
+    document.getElementById("ui-plan-text").innerText = rawPlanName;
     document.getElementById("ui-course-btn-text").innerHTML = `💎 使用課程 (${extractedDuration}分)`;
 
-    const hasCourse = (currentUser.courseBalance > 0);
-    const hasTicket = (currentUser.ticketBalance > 0);
+    const hasCourse = (currentUser.courseBalance > 0), hasTicket = (currentUser.ticketBalance > 0);
+    const cDiv = document.getElementById('opt-course'), tCheckCourse = document.getElementById('courseUseTicket'), tCheckSingle = document.getElementById('singleUseTicket');
     
-    const cDiv = document.getElementById('opt-course');
     if(!hasCourse) { 
       cDiv.style.opacity = '0.5'; cDiv.style.pointerEvents = 'none'; 
-      if (!cDiv.innerHTML.includes('點數不足')) cDiv.innerHTML += '<div style="color:var(--danger);font-size:12px;margin-top:5px;">(點數不足)</div>';
+      if (!cDiv.innerHTML.includes('點數不足')) cDiv.innerHTML += '<div style="color:#c62828;font-size:13px;margin-top:8px;">(點數不足)</div>';
     } else { 
       cDiv.style.opacity = '1'; cDiv.style.pointerEvents = 'auto'; 
-      const errDiv = cDiv.querySelector('div[style*="color:var(--danger)"]'); if(errDiv) errDiv.remove();
+      const errDiv = cDiv.querySelector('div[style*="color:#c62828"]'); if(errDiv) errDiv.remove();
     }
     
-    const tCheckCourse = document.getElementById('courseUseTicket');
-    const tCheckSingle = document.getElementById('singleUseTicket');
     if(!hasTicket) { tCheckCourse.disabled = true; tCheckCourse.checked = false; tCheckSingle.disabled = true; tCheckSingle.checked = false; } 
     else { tCheckCourse.disabled = false; tCheckSingle.disabled = false; }
+    perfLog.end('渲染主畫面 UI');
   }
-  function resetSelection() { selectedTime = null; document.getElementById('datePicker').value = ''; document.getElementById('slotsContainer').innerHTML = ''; document.getElementById('confirmBtn').style.display = 'none'; document.getElementById('time-section').style.display = 'none'; }
   
-// --- 1. 選單切換邏輯 ---
   function selectOption(type) {
     selectedPlan = type;
     document.querySelectorAll('.option-card').forEach(e => e.classList.remove('selected'));
-    
-    // 安全地重置打勾框
-    const courseCheck = document.getElementById('courseUseTicket');
-    const singleCheck = document.getElementById('singleUseTicket');
-    if (courseCheck) courseCheck.checked = false; 
-    if (singleCheck) singleCheck.checked = false; 
-    useTicket = false;
-    
-    resetSelection();
+    const courseCheck = document.getElementById('courseUseTicket'), singleCheck = document.getElementById('singleUseTicket');
+    if (courseCheck) courseCheck.checked = false; if (singleCheck) singleCheck.checked = false; 
+    useTicket = false; resetSelection();
 
-    if(type === 'COURSE') {
-       const opt = document.getElementById('opt-course');
-       if (opt) opt.classList.add('selected');
-       updateCoursePlanLogic(); 
-    } else {
-       const opt = document.getElementById('opt-single');
-       if (opt) opt.classList.add('selected');
-       updateSinglePlanLogic();
-    }
+    if(type === 'COURSE') { const opt = document.getElementById('opt-course'); if (opt) opt.classList.add('selected'); updateCoursePlanLogic(); } 
+    else { const opt = document.getElementById('opt-single'); if (opt) opt.classList.add('selected'); updateSinglePlanLogic(); }
   }
 
-  // --- 2. 課程邏輯 ---
+  function resetSelection() { selectedTime = null; document.getElementById('datePicker').value = ''; document.getElementById('slotsContainer').innerHTML = ''; document.getElementById('confirmBtn').style.display = 'none'; document.getElementById('time-section').style.display = 'none'; }
+
   function updateCoursePlanLogic() {
     if(selectedPlan !== 'COURSE') return;
-    
-    const select = document.getElementById('coursePlanSelect');
-    const ticketCheck = document.getElementById('courseUseTicket');
-    const ticketHint = document.getElementById('courseTicketHint');
-    
-    let baseDuration = currentUser.parsedDuration || 50; 
-    let val = select ? select.value : '1'; 
-    let isTicket = ticketCheck ? ticketCheck.checked : false; 
-    
-    let serviceTime = 0, bufferTime = 0, ticketTime = 0;
-    let planText = "";
-    const hasTicket = (parseInt(currentUser.ticketBalance) > 0 || parseInt(currentUser.tickets) > 0);
+    const select = document.getElementById('coursePlanSelect'), ticketCheck = document.getElementById('courseUseTicket'), ticketHint = document.getElementById('courseTicketHint');
+    let baseDuration = currentUser.parsedDuration || 50, val = select ? select.value : '1', isTicket = ticketCheck ? ticketCheck.checked : false, serviceTime = 0, bufferTime = 0, ticketTime = 0, planText = "";
+    const hasTicket = (parseInt(currentUser.ticketBalance) > 0);
 
     if (val === '1') {
       planText = `課程扣抵 (1堂 ${baseDuration}分)`;
-      if(ticketCheck && ticketCheck.parentElement) {
-        if(hasTicket) { 
-          ticketCheck.disabled = false; ticketCheck.parentElement.style.opacity = "1"; 
-        } else { 
-          ticketCheck.disabled = true; ticketCheck.checked = false; ticketCheck.parentElement.style.opacity = "0.5"; isTicket = false; 
-        }
-      }
+      if(ticketCheck && ticketCheck.parentElement) { if(hasTicket) { ticketCheck.disabled = false; ticketCheck.parentElement.style.opacity = "1"; } else { ticketCheck.disabled = true; ticketCheck.checked = false; ticketCheck.parentElement.style.opacity = "0.5"; isTicket = false; } }
       if (ticketHint) ticketHint.style.display = "none";
       if(isTicket) { serviceTime = baseDuration; ticketTime = 30; bufferTime = 10; } else { serviceTime = baseDuration; bufferTime = 10; }
     } else if (val === '2') {
       planText = `課程扣抵 (連續2堂 ${baseDuration*2}分)`;
-      if(ticketCheck && ticketCheck.parentElement) {
-        ticketCheck.checked = false; ticketCheck.disabled = true; ticketCheck.parentElement.style.opacity = "0.5"; 
-      }
+      if(ticketCheck && ticketCheck.parentElement) { ticketCheck.checked = false; ticketCheck.disabled = true; ticketCheck.parentElement.style.opacity = "0.5"; }
       if (ticketHint) ticketHint.style.display = "block";
       isTicket = false; serviceTime = baseDuration * 2; bufferTime = 20;
     }
-
-    useTicket = isTicket; 
-    finalPlanDetailName = planText + (isTicket ? " + 結構調整抵用卷" : "");
+    useTicket = isTicket; finalPlanDetailName = planText + (isTicket ? " + 結構調整抵用卷" : "");
     setDuration(serviceTime + ticketTime + bufferTime, serviceTime + ticketTime);
   }
 
-  // --- 3. 單次邏輯 ---
   function updateSinglePlanLogic() {
     if(selectedPlan !== 'SINGLE') return;
-    
-    const select = document.getElementById('singlePlanSelect');
-    const ticketCheck = document.getElementById('singleUseTicket');
-    const ticketHint = document.getElementById('singleTicketHint');
+    const select = document.getElementById('singlePlanSelect'), ticketCheck = document.getElementById('singleUseTicket'), ticketHint = document.getElementById('singleTicketHint');
+    let val = select ? select.value : '50_1', isTicket = ticketCheck ? ticketCheck.checked : false, serviceTime = 0, bufferTime = 0, ticketTime = 0, planText = "";
+    const hasTicket = (parseInt(currentUser.ticketBalance) > 0);
 
-    let val = select ? select.value : '50_1'; 
-    let isTicket = ticketCheck ? ticketCheck.checked : false; 
-    let serviceTime = 0, bufferTime = 0, ticketTime = 0;
-    let planText = "";
-    const hasTicket = (parseInt(currentUser.ticketBalance) > 0 || parseInt(currentUser.tickets) > 0);
-
-    if (val === '50_1') { 
-      planText = "單次預約 (50分)"; 
-      if(ticketCheck && ticketCheck.parentElement) {
-        if(hasTicket) { ticketCheck.disabled = false; ticketCheck.parentElement.style.opacity = "1"; }
-        else { ticketCheck.disabled = true; ticketCheck.checked = false; ticketCheck.parentElement.style.opacity = "0.5"; isTicket = false; }
-      }
-      if (ticketHint) ticketHint.style.display = "none"; 
-      if (isTicket) { serviceTime = 50; ticketTime = 30; bufferTime = 10; } else { serviceTime = 50; bufferTime = 10; } 
-    } 
-    else if (val === '50_2') { 
-      planText = "單次預約 (連續兩堂 100分)"; 
-      if(ticketCheck && ticketCheck.parentElement) { ticketCheck.checked = false; ticketCheck.disabled = true; ticketCheck.parentElement.style.opacity = "0.5"; }
-      if (ticketHint) ticketHint.style.display = "block"; 
-      isTicket = false; serviceTime = 100; bufferTime = 20; 
-    } 
-    else if (val === '80_1') { 
-      planText = "單次預約 (80分)"; 
-      if(ticketCheck && ticketCheck.parentElement) {
-        if(hasTicket) { ticketCheck.disabled = false; ticketCheck.parentElement.style.opacity = "1"; }
-        else { ticketCheck.disabled = true; ticketCheck.checked = false; ticketCheck.parentElement.style.opacity = "0.5"; isTicket = false; }
-      }
-      if (ticketHint) ticketHint.style.display = "none"; 
-      if (isTicket) { serviceTime = 80; ticketTime = 30; bufferTime = 10; } else { serviceTime = 80; bufferTime = 10; } 
-    }
+    if (val === '50_1') { planText = "單次預約 (50分)"; if(ticketCheck && ticketCheck.parentElement) { if(hasTicket) { ticketCheck.disabled = false; ticketCheck.parentElement.style.opacity = "1"; } else { ticketCheck.disabled = true; ticketCheck.checked = false; ticketCheck.parentElement.style.opacity = "0.5"; isTicket = false; } } if (ticketHint) ticketHint.style.display = "none"; if (isTicket) { serviceTime = 50; ticketTime = 30; bufferTime = 10; } else { serviceTime = 50; bufferTime = 10; } } 
+    else if (val === '50_2') { planText = "單次預約 (連續兩堂 100分)"; if(ticketCheck && ticketCheck.parentElement) { ticketCheck.checked = false; ticketCheck.disabled = true; ticketCheck.parentElement.style.opacity = "0.5"; } if (ticketHint) ticketHint.style.display = "block"; isTicket = false; serviceTime = 100; bufferTime = 20; } 
+    else if (val === '80_1') { planText = "單次預約 (80分)"; if(ticketCheck && ticketCheck.parentElement) { if(hasTicket) { ticketCheck.disabled = false; ticketCheck.parentElement.style.opacity = "1"; } else { ticketCheck.disabled = true; ticketCheck.checked = false; ticketCheck.parentElement.style.opacity = "0.5"; isTicket = false; } } if (ticketHint) ticketHint.style.display = "none"; if (isTicket) { serviceTime = 80; ticketTime = 30; bufferTime = 10; } else { serviceTime = 80; bufferTime = 10; } }
     
-    useTicket = isTicket; 
-    finalPlanDetailName = planText + (isTicket ? " + 結構調整抵用卷" : "");
+    useTicket = isTicket; finalPlanDetailName = planText + (isTicket ? " + 結構調整抵用卷" : "");
     setDuration(serviceTime + ticketTime + bufferTime, serviceTime + ticketTime);
   }
 
-  // --- 4. 顯示時間區塊 (關鍵防呆在這裡！) ---
   function setDuration(occupied, display) {
-    occupiedDuration = occupied; 
-    displayDuration = display;   
-    
-    // 安全地修改文字
-    const finalDurEl = document.getElementById('finalDuration');
-    if (finalDurEl) finalDurEl.innerText = display;
-    
-    // 安全地顯示時間區塊
-    const timeSection = document.getElementById('time-section');
-    if (timeSection) {
-      timeSection.style.display = 'block';
-    } else {
-      console.error("警告：找不到 id='time-section' 的區塊，請確認 HTML 是否有遺失！");
-    }
-    
-    // 安全地觸發查詢
-    const datePicker = document.getElementById('datePicker');
-    if (datePicker && datePicker.value) {
-      fetchSlots();
-    }
+    occupiedDuration = occupied; displayDuration = display;   
+    const finalDurEl = document.getElementById('finalDuration'); if (finalDurEl) finalDurEl.innerText = display;
+    const timeSection = document.getElementById('time-section'); if (timeSection) timeSection.style.display = 'block';
+    const datePicker = document.getElementById('datePicker'); if (datePicker && datePicker.value) fetchSlots();
   }
+
   function fetchSlots() {
     const date = document.getElementById('datePicker').value; if(!date) return;
-    const div = document.getElementById('slotsContainer'); div.innerHTML = '<div style="grid-column:1/-1; text-align:center;">查詢中...</div>';
+    const div = document.getElementById('slotsContainer'); div.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--text-muted);">查詢中...</div>';
+    
+    perfLog.start('查詢空閒時段 API');
     sendRequest('getAvailableSlots', { date: date, duration: occupiedDuration }).then(res => {
+      perfLog.end('查詢空閒時段 API');
       div.innerHTML = '';
-      if(res.status === 'FULL') { div.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--danger);">本日已額滿</div>'; } 
-      else if(!res.slots || res.slots.length === 0) { div.innerHTML = '<div style="grid-column:1/-1; text-align:center;">無符合時段</div>'; } 
+      if(res.status === 'FULL') { div.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:#c62828; font-weight:bold;">本日已無符合時段</div>'; } 
+      else if(!res.slots || res.slots.length === 0) { div.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--text-muted);">無符合時段</div>'; } 
       else {
         res.slots.forEach(t => {
           let el = document.createElement('div'); el.className = 'time-slot'; el.innerText = t;
@@ -569,35 +558,45 @@
   }
 
   function renderBookingList() {
+    perfLog.start('渲染預約清單');
     const container = document.getElementById('bookingList'); if (!container) return;
     document.getElementById('history-section').style.display = 'block'; container.innerHTML = ''; 
-    if (!currentBookingList || currentBookingList.length === 0) { container.innerHTML = '<div class="text-center" style="color:#666; padding:10px;">目前沒有預約</div>'; return; }
+    if (!currentBookingList || currentBookingList.length === 0) { container.innerHTML = '<div style="color:var(--text-muted); padding:10px 0;">目前沒有預約</div>'; perfLog.end('渲染預約清單'); return; }
+    
     currentBookingList.sort((a, b) => new Date(a.start) - new Date(b.start));
     let html = '';
     currentBookingList.forEach(booking => {
       const isTemp = booking.id && booking.id.toString().startsWith('temp_');
-      const statusLabel = isTemp ? '<span style="color:green; font-weight:bold; font-size:12px; margin-left:5px;">(新!)</span>' : '';
+      const statusLabel = isTemp ? '<span style="color:#2d5a4c; font-weight:bold; font-size:12px; margin-left:5px;">(新!)</span>' : '';
       let displayStart = booking.start.replace('T', ' ').substring(0, 16); let displayEnd = booking.end ? booking.end : ""; let timeString = displayEnd ? `${displayStart.split(' ')[1]} - ${displayEnd}` : displayStart;
-      html += `<div class="booking-item" style="${isTemp ? 'border-left-color:#28a745;' : ''}"><div class="booking-info"><div class="booking-title">${booking.title} ${statusLabel}</div><div class="booking-date">📅 ${displayStart.split(' ')[0]} <span style="margin-left:5px; color:#333;">${timeString}</span></div></div>${!isTemp ? `<button class="cancel-btn" onclick="cancelBooking('${booking.id}', '${displayStart}')">取消</button>` : ''}</div>`;
+      let cleanTitle = booking.title ? booking.title.replace(/(\(\d+分\))\s*(?=\1)/g, '') : '未命名預約';
+
+      html += `<div class="booking-item" style="${isTemp ? 'border-left-color:#8e3e26;' : ''}"><div class="booking-info"><div class="booking-title">${cleanTitle} ${statusLabel}</div><div class="booking-date">📅 ${displayStart.split(' ')[0]} <span style="margin-left:8px; color:var(--text-main); font-weight:bold;">${timeString}</span></div></div>${!isTemp ? `<button class="cancel-btn" onclick="cancelBooking('${booking.id}', '${displayStart}')">取消</button>` : ''}</div>`;
     });
     container.innerHTML = html;
+    perfLog.end('渲染預約清單');
   }
 
   function loadBookingHistory() {
-    const listDiv = document.getElementById('bookingList'); if (currentBookingList.length === 0) { listDiv.innerHTML = '<div style="text-align:center; color:#666;">載入中...</div>'; }
+    const listDiv = document.getElementById('bookingList'); if (currentBookingList.length === 0) { listDiv.innerHTML = '<div style="color:var(--text-muted); padding:10px 0;">載入中...</div>'; }
     document.getElementById('history-section').style.display = 'block';
+    
+    perfLog.start('獲取歷史預約 API');
     sendRequest('getBookingHistory', { phone: currentUser.phone }, true).then(res => {
-      if(res.success) { currentBookingList = res.bookings; renderBookingList(); } else { listDiv.innerHTML = '<div style="text-align:center; color:#666;">無法讀取紀錄</div>'; }
+      perfLog.end('獲取歷史預約 API');
+      if(res.success) { currentBookingList = res.bookings; renderBookingList(); } else { listDiv.innerHTML = '<div style="color:#c62828; padding:10px 0;">無法讀取紀錄</div>'; }
     });
   }
 
   function cancelBooking(eventId, timeStr) {
-    Swal.fire({ title: '取消預約', text: `確定要取消 ${timeStr} 的預約嗎？`, icon: 'warning', showCancelButton: true, confirmButtonColor: '#A73520', cancelButtonColor: '#3085d6', confirmButtonText: '是的，取消它', cancelButtonText: '保留' }).then((result) => {
+    Swal.fire({ title: '取消預約', text: `確定要取消 ${timeStr} 的預約嗎？`, icon: 'warning', showCancelButton: true, confirmButtonColor: '#8e3e26', cancelButtonColor: '#666', confirmButtonText: '是的，取消它', cancelButtonText: '保留' }).then((result) => {
       if (result.isConfirmed) {
+        perfLog.start('取消預約 API');
         sendRequest('cancelBooking', { eventId: eventId, phone: currentUser.phone, name: currentUser.name || lineDisplayName, lineUserId: lineUserId }).then(res => {
+          perfLog.end('取消預約 API');
           if(res.success) { 
             currentBookingList = currentBookingList.filter(b => b.id !== eventId); renderBookingList();
-            Swal.fire({ title: '已取消', text: '您的預約已成功取消', icon: 'success', confirmButtonColor: '#246A53' });
+            Swal.fire({ title: '已取消', text: '您的預約已成功取消', icon: 'success', confirmButtonColor: '#2d5a4c' });
             localStorage.removeItem('vip_line_' + lineUserId);
           } else { Swal.fire('取消失敗', res.error, 'error'); }
         });
