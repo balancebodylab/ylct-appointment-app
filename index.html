@@ -416,55 +416,141 @@
     if(!hasTicket) { tCheckCourse.disabled = true; tCheckCourse.checked = false; tCheckSingle.disabled = true; tCheckSingle.checked = false; } 
     else { tCheckCourse.disabled = false; tCheckSingle.disabled = false; }
   }
+  function resetSelection() { selectedTime = null; document.getElementById('datePicker').value = ''; document.getElementById('slotsContainer').innerHTML = ''; document.getElementById('confirmBtn').style.display = 'none'; document.getElementById('time-section').style.display = 'none'; }
   
+// --- 1. 選單切換邏輯 ---
   function selectOption(type) {
     selectedPlan = type;
     document.querySelectorAll('.option-card').forEach(e => e.classList.remove('selected'));
-    document.getElementById('courseUseTicket').checked = false; document.getElementById('singleUseTicket').checked = false; useTicket = false;
+    
+    // 安全地重置打勾框
+    const courseCheck = document.getElementById('courseUseTicket');
+    const singleCheck = document.getElementById('singleUseTicket');
+    if (courseCheck) courseCheck.checked = false; 
+    if (singleCheck) singleCheck.checked = false; 
+    useTicket = false;
+    
     resetSelection();
-    if(type === 'COURSE') { document.getElementById('opt-course').classList.add('selected'); updateCoursePlanLogic(); } 
-    else { document.getElementById('opt-single').classList.add('selected'); updateSinglePlanLogic(); }
+
+    if(type === 'COURSE') {
+       const opt = document.getElementById('opt-course');
+       if (opt) opt.classList.add('selected');
+       updateCoursePlanLogic(); 
+    } else {
+       const opt = document.getElementById('opt-single');
+       if (opt) opt.classList.add('selected');
+       updateSinglePlanLogic();
+    }
   }
 
-  function resetSelection() { selectedTime = null; document.getElementById('datePicker').value = ''; document.getElementById('slotsContainer').innerHTML = ''; document.getElementById('confirmBtn').style.display = 'none'; document.getElementById('time-section').style.display = 'none'; }
-
+  // --- 2. 課程邏輯 ---
   function updateCoursePlanLogic() {
     if(selectedPlan !== 'COURSE') return;
+    
     const select = document.getElementById('coursePlanSelect');
     const ticketCheck = document.getElementById('courseUseTicket');
     const ticketHint = document.getElementById('courseTicketHint');
-    let baseDuration = currentUser.parsedDuration || 50, val = select.value, isTicket = ticketCheck.checked, serviceTime = 0, bufferTime = 0, ticketTime = 0, planText = "";
-    const hasTicket = (currentUser.ticketBalance > 0);
+    
+    let baseDuration = currentUser.parsedDuration || 50; 
+    let val = select ? select.value : '1'; 
+    let isTicket = ticketCheck ? ticketCheck.checked : false; 
+    
+    let serviceTime = 0, bufferTime = 0, ticketTime = 0;
+    let planText = "";
+    const hasTicket = (parseInt(currentUser.ticketBalance) > 0 || parseInt(currentUser.tickets) > 0);
+
     if (val === '1') {
       planText = `課程扣抵 (1堂 ${baseDuration}分)`;
-      if(hasTicket) { ticketCheck.disabled = false; ticketCheck.parentElement.style.opacity = "1"; }
-      ticketHint.style.display = "none";
+      if(ticketCheck && ticketCheck.parentElement) {
+        if(hasTicket) { 
+          ticketCheck.disabled = false; ticketCheck.parentElement.style.opacity = "1"; 
+        } else { 
+          ticketCheck.disabled = true; ticketCheck.checked = false; ticketCheck.parentElement.style.opacity = "0.5"; isTicket = false; 
+        }
+      }
+      if (ticketHint) ticketHint.style.display = "none";
       if(isTicket) { serviceTime = baseDuration; ticketTime = 30; bufferTime = 10; } else { serviceTime = baseDuration; bufferTime = 10; }
     } else if (val === '2') {
       planText = `課程扣抵 (連續2堂 ${baseDuration*2}分)`;
-      ticketCheck.checked = false; ticketCheck.disabled = true; ticketCheck.parentElement.style.opacity = "0.5"; ticketHint.style.display = "block";
+      if(ticketCheck && ticketCheck.parentElement) {
+        ticketCheck.checked = false; ticketCheck.disabled = true; ticketCheck.parentElement.style.opacity = "0.5"; 
+      }
+      if (ticketHint) ticketHint.style.display = "block";
       isTicket = false; serviceTime = baseDuration * 2; bufferTime = 20;
     }
-    useTicket = isTicket; finalPlanDetailName = planText + (isTicket ? " + 結構調整抵用卷" : "");
+
+    useTicket = isTicket; 
+    finalPlanDetailName = planText + (isTicket ? " + 結構調整抵用卷" : "");
     setDuration(serviceTime + ticketTime + bufferTime, serviceTime + ticketTime);
   }
 
+  // --- 3. 單次邏輯 ---
   function updateSinglePlanLogic() {
     if(selectedPlan !== 'SINGLE') return;
-    const select = document.getElementById('singlePlanSelect'), ticketCheck = document.getElementById('singleUseTicket'), ticketHint = document.getElementById('singleTicketHint');
-    const val = select.value; let isTicket = ticketCheck.checked, serviceTime = 0, bufferTime = 0, ticketTime = 0, planText = "";
-    const hasTicket = (currentUser.ticketBalance > 0);
-
-    if (val === '50_1') { planText = "單次預約 (50分)"; if(hasTicket) { ticketCheck.disabled = false; ticketCheck.parentElement.style.opacity = "1"; } ticketHint.style.display = "none"; if (isTicket) { serviceTime = 50; ticketTime = 30; bufferTime = 10; } else { serviceTime = 50; bufferTime = 10; } } 
-    else if (val === '50_2') { planText = "單次預約 (連續兩堂 100分)"; ticketCheck.checked = false; ticketCheck.disabled = true; ticketCheck.parentElement.style.opacity = "0.5"; ticketHint.style.display = "block"; isTicket = false; serviceTime = 100; bufferTime = 20; } 
-    else if (val === '80_1') { planText = "單次預約 (80分)"; if(hasTicket) { ticketCheck.disabled = false; ticketCheck.parentElement.style.opacity = "1"; } ticketHint.style.display = "none"; if (isTicket) { serviceTime = 80; ticketTime = 30; bufferTime = 10; } else { serviceTime = 80; bufferTime = 10; } }
     
-    useTicket = isTicket; finalPlanDetailName = planText + (isTicket ? " + 結構調整抵用卷" : "");
+    const select = document.getElementById('singlePlanSelect');
+    const ticketCheck = document.getElementById('singleUseTicket');
+    const ticketHint = document.getElementById('singleTicketHint');
+
+    let val = select ? select.value : '50_1'; 
+    let isTicket = ticketCheck ? ticketCheck.checked : false; 
+    let serviceTime = 0, bufferTime = 0, ticketTime = 0;
+    let planText = "";
+    const hasTicket = (parseInt(currentUser.ticketBalance) > 0 || parseInt(currentUser.tickets) > 0);
+
+    if (val === '50_1') { 
+      planText = "單次預約 (50分)"; 
+      if(ticketCheck && ticketCheck.parentElement) {
+        if(hasTicket) { ticketCheck.disabled = false; ticketCheck.parentElement.style.opacity = "1"; }
+        else { ticketCheck.disabled = true; ticketCheck.checked = false; ticketCheck.parentElement.style.opacity = "0.5"; isTicket = false; }
+      }
+      if (ticketHint) ticketHint.style.display = "none"; 
+      if (isTicket) { serviceTime = 50; ticketTime = 30; bufferTime = 10; } else { serviceTime = 50; bufferTime = 10; } 
+    } 
+    else if (val === '50_2') { 
+      planText = "單次預約 (連續兩堂 100分)"; 
+      if(ticketCheck && ticketCheck.parentElement) { ticketCheck.checked = false; ticketCheck.disabled = true; ticketCheck.parentElement.style.opacity = "0.5"; }
+      if (ticketHint) ticketHint.style.display = "block"; 
+      isTicket = false; serviceTime = 100; bufferTime = 20; 
+    } 
+    else if (val === '80_1') { 
+      planText = "單次預約 (80分)"; 
+      if(ticketCheck && ticketCheck.parentElement) {
+        if(hasTicket) { ticketCheck.disabled = false; ticketCheck.parentElement.style.opacity = "1"; }
+        else { ticketCheck.disabled = true; ticketCheck.checked = false; ticketCheck.parentElement.style.opacity = "0.5"; isTicket = false; }
+      }
+      if (ticketHint) ticketHint.style.display = "none"; 
+      if (isTicket) { serviceTime = 80; ticketTime = 30; bufferTime = 10; } else { serviceTime = 80; bufferTime = 10; } 
+    }
+    
+    useTicket = isTicket; 
+    finalPlanDetailName = planText + (isTicket ? " + 結構調整抵用卷" : "");
     setDuration(serviceTime + ticketTime + bufferTime, serviceTime + ticketTime);
   }
 
-  function setDuration(occupied, display) { occupiedDuration = occupied; displayDuration = display; document.getElementById('finalDuration').innerText = display; document.getElementById('time-section').style.display = 'block'; if(document.getElementById('datePicker').value) fetchSlots(); }
-
+  // --- 4. 顯示時間區塊 (關鍵防呆在這裡！) ---
+  function setDuration(occupied, display) {
+    occupiedDuration = occupied; 
+    displayDuration = display;   
+    
+    // 安全地修改文字
+    const finalDurEl = document.getElementById('finalDuration');
+    if (finalDurEl) finalDurEl.innerText = display;
+    
+    // 安全地顯示時間區塊
+    const timeSection = document.getElementById('time-section');
+    if (timeSection) {
+      timeSection.style.display = 'block';
+    } else {
+      console.error("警告：找不到 id='time-section' 的區塊，請確認 HTML 是否有遺失！");
+    }
+    
+    // 安全地觸發查詢
+    const datePicker = document.getElementById('datePicker');
+    if (datePicker && datePicker.value) {
+      fetchSlots();
+    }
+  }
   function fetchSlots() {
     const date = document.getElementById('datePicker').value; if(!date) return;
     const div = document.getElementById('slotsContainer'); div.innerHTML = '<div style="grid-column:1/-1; text-align:center;">查詢中...</div>';
