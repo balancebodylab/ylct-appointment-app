@@ -430,10 +430,11 @@
 
   function updateCoursePlanLogic() {
     if(selectedPlan !== 'COURSE') return;
-    const select = document.getElementById('coursePlanSelect'), ticketCheck = document.getElementById('courseUseTicket'), ticketHint = document.getElementById('courseTicketHint');
+    const select = document.getElementById('coursePlanSelect');
+    const ticketCheck = document.getElementById('courseUseTicket');
+    const ticketHint = document.getElementById('courseTicketHint');
     let baseDuration = currentUser.parsedDuration || 50, val = select.value, isTicket = ticketCheck.checked, serviceTime = 0, bufferTime = 0, ticketTime = 0, planText = "";
     const hasTicket = (currentUser.ticketBalance > 0);
-
     if (val === '1') {
       planText = `課程扣抵 (1堂 ${baseDuration}分)`;
       if(hasTicket) { ticketCheck.disabled = false; ticketCheck.parentElement.style.opacity = "1"; }
