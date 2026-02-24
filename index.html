@@ -334,6 +334,9 @@
     });
   }
 
+ // ==========================================
+  // 🔄 前往預約與規則同意
+  // ==========================================
   function goToBooking() {
     if (!isLoginChecked) {
       document.getElementById('loading-overlay').style.display = 'flex';
@@ -345,15 +348,54 @@
     document.getElementById('loading-overlay').style.display = 'none';
     document.getElementById('loading-text').innerText = '資料處理中...';
     
-    if (isNewUser) {
-      Swal.fire({ title: '歡迎新朋友 🎉', text: '請直接選擇預約項目，稍後確認時會為您建立會員資料。', icon: 'info', confirmButtonColor: '#2d5a4c' });
-    }
+    // 🛑 新增：跳出預約規範同意視窗
+    Swal.fire({
+      title: '📜 預約規範與注意事項',
+      html: `
+        <div style="text-align: left; font-size: 14px; color: var(--text-muted); line-height: 1.6; max-height: 250px; overflow-y: auto; padding: 12px; background: #fdfaf2; border-radius: 8px; border: 1px solid #e5b94b; margin-bottom: 15px;">
+          <ol style="padding-left: 20px; margin: 0;">
+            <li style="margin-bottom: 8px;"><strong>取消與更改：</strong>如需取消或更改預約，請務必於預約時間 <strong>24 小時前</strong> 提出。</li>
+            <li style="margin-bottom: 8px;"><strong>遲到處理：</strong>為保障下一位客人的權益，若您遲到，您的服務時間將會相應縮短，敬請見諒。</li>
+            <li style="margin-bottom: 8px;"><strong>健康狀況：</strong>若有特殊疾病、受傷或懷孕，請於預約時或服務前主動告知。</li>
+            <li><strong>其他事項：</strong>進入工作室請輕聲細語，共同維護放鬆的空間品質。</li>
+          </ol>
+        </div>
+        <label style="display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 16px; font-weight: bold; color: var(--primary);">
+          <input type="checkbox" id="agreeRulesCheckbox" style="width: 20px; height: 20px; margin-right: 8px; cursor: pointer; accent-color: var(--primary);"> 
+          我已詳細閱讀並同意上述規範
+        </label>
+      `,
+      confirmButtonText: '同意並開始預約',
+      confirmButtonColor: '#2d5a4c',
+      showCancelButton: true,
+      cancelButtonText: '取消',
+      // 防呆：檢查是否打勾
+      preConfirm: () => {
+        const isAgreed = document.getElementById('agreeRulesCheckbox').checked;
+        if (!isAgreed) {
+          Swal.showValidationMessage('請先勾選同意預約規範才能繼續喔！');
+          return false;
+        }
+        return true;
+      }
+    }).then((result) => {
+      // 只有在按下同意且打勾後，才會執行以下進場動作
+      if (result.isConfirmed) {
+        if (isNewUser) {
+          Swal.fire({ 
+            title: '歡迎新朋友 🎉', 
+            text: '請直接選擇預約項目，稍後確認時會為您建立會員資料。', 
+            icon: 'info', 
+            confirmButtonColor: '#2d5a4c' 
+          });
+        }
 
-    renderMain();
-    if (!isNewUser) loadBookingHistory(); 
-    switchView('view-main');
+        renderMain();
+        if (!isNewUser) loadBookingHistory(); 
+        switchView('view-main');
+      }
+    });
   }
-
   // ==========================================
   // 預約送出與註冊攔截
   // ==========================================
