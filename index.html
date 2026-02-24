@@ -448,7 +448,7 @@
     });
   }
 
-  function showBookingConfirmDialog() {
+ function showBookingConfirmDialog() {
     const dateStr = document.getElementById('datePicker').value;
     const realCourseName = `${currentUser.planName || '課程'} (1堂 ${currentUser.parsedDuration || 50}分)`;
     const reqData = {
@@ -462,7 +462,8 @@
       icon: 'info', showCancelButton: true, confirmButtonText: '確定預約', cancelButtonText: '取消', confirmButtonColor: '#2d5a4c', showLoaderOnConfirm: true,
       preConfirm: async () => { 
         perfLog.start('新增預約 API');
-        const res = await sendRequest('createBooking', reqData); 
+        // 🛡️ 關鍵修正：加入 true 讓全螢幕白遮罩不要出來，改用 Swal 內建按鈕動畫
+        const res = await sendRequest('createBooking', reqData, true); 
         perfLog.end('新增預約 API');
         return res;
       },
@@ -477,20 +478,31 @@
         renderBookingList();
         Swal.fire({ title: '預約成功！', text: '您的預約已新增至列表', icon: 'success', timer: 2000, showConfirmButton: false });
         resetSelection(); localStorage.removeItem('vip_line_' + lineUserId);
-      } else if (result.isConfirmed && !result.value.success) { Swal.fire('預約失敗', result.value.error || '發生未知錯誤', 'error'); }
+      } else if (result.isConfirmed && !result.value.success) { 
+        Swal.fire('預約失敗', result.value.error || '發生未知錯誤', 'error'); 
+      }
     });
   }
 
   // ==========================================
-  // 🌐 共用 API 工具
+  // 🌐 共用 API 工具 (優化載入遮罩版)
   // ==========================================
-  function sendRequest(action, data, isBackground = false) {
-    if (!isBackground) document.getElementById('loading-overlay').style.display = 'flex';
+  function sendRequest(action, data, isBackground = false, loadingText = '資料處理中...') {
+    if (!isBackground) {
+      document.getElementById('loading-overlay').style.display = 'flex';
+      const textEl = document.getElementById('loading-text');
+      if (textEl) textEl.innerText = loadingText; // 動態替換遮罩文字
+    }
     data.action = action;
     return fetch(GAS_URL, { method: 'POST', body: JSON.stringify(data) })
       .then(res => res.json())
-      .finally(() => { if (!isBackground) document.getElementById('loading-overlay').style.display = 'none'; })
-      .catch(err => { if (!isBackground) Swal.fire('連線錯誤', '網路忙碌中', 'error'); throw err; });
+      .finally(() => { 
+        if (!isBackground) document.getElementById('loading-overlay').style.display = 'none'; 
+      })
+      .catch(err => { 
+        if (!isBackground) Swal.fire('連線錯誤', '網路忙碌中', 'error'); 
+        throw err; 
+      });
   }
 
   function getLocalUserData(uid) {
@@ -641,17 +653,39 @@
     });
   }
 
-  function cancelBooking(eventId, timeStr) {
-    Swal.fire({ title: '取消預約', text: `確定要取消 ${timeStr} 的預約嗎？`, icon: 'warning', showCancelButton: true, confirmButtonColor: '#8e3e26', cancelButtonColor: '#666', confirmButtonText: '是的，取消它', cancelButtonText: '保留' }).then((result) => {
+function cancelBooking(eventId, timeStr) {
+    Swal.fire({ 
+      title: '取消預約', 
+      text: `確定要取消 ${timeStr} 的預約嗎？`, 
+      icon: 'warning', 
+      showCancelButton: true, 
+      confirmButtonColor: '#8e3e26', 
+      cancelButtonColor: '#666', 
+      confirmButtonText: '是的，取消它', 
+      cancelButtonText: '保留' 
+    }).then((result) => {
       if (result.isConfirmed) {
+        
+        // 🛑 取代醜醜的白畫面：改用精緻的 Swal 載入視窗
+        Swal.fire({
+          title: '處理中...',
+          text: '正在為您取消預約',
+          allowOutsideClick: false,
+          didOpen: () => { Swal.showLoading(); }
+        });
+
         perfLog.start('取消預約 API');
-        sendRequest('cancelBooking', { eventId: eventId, phone: currentUser.phone, name: currentUser.name || lineDisplayName, lineUserId: lineUserId }).then(res => {
+        // 🛡️ 關鍵修正：加入 true 在背景執行，隱藏全螢幕白遮罩
+        sendRequest('cancelBooking', { eventId: eventId, phone: currentUser.phone, name: currentUser.name || lineDisplayName, lineUserId: lineUserId }, true).then(res => {
           perfLog.end('取消預約 API');
           if(res.success) { 
-            currentBookingList = currentBookingList.filter(b => b.id !== eventId); renderBookingList();
+            currentBookingList = currentBookingList.filter(b => b.id !== eventId); 
+            renderBookingList();
             Swal.fire({ title: '已取消', text: '您的預約已成功取消', icon: 'success', confirmButtonColor: '#2d5a4c' });
             localStorage.removeItem('vip_line_' + lineUserId);
-          } else { Swal.fire('取消失敗', res.error, 'error'); }
+          } else { 
+            Swal.fire('取消失敗', res.error, 'error'); 
+          }
         });
       }
     });
