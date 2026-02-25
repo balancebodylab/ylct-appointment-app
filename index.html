@@ -478,6 +478,11 @@
         renderBookingList();
         Swal.fire({ title: '預約成功！', text: '您的預約已新增至列表', icon: 'success', timer: 2000, showConfirmButton: false });
         resetSelection(); localStorage.removeItem('vip_line_' + lineUserId);
+        // 在背後偷偷戳後端，強迫立刻處理 Queue (客人完全沒感覺)
+        fetch(GAS_URL, { 
+          method: 'POST', 
+          body: JSON.stringify({ action: 'triggerQueueNow' }) 
+        });
       } else if (result.isConfirmed && !result.value.success) { 
         Swal.fire('預約失敗', result.value.error || '發生未知錯誤', 'error'); 
       }
@@ -683,6 +688,11 @@ function cancelBooking(eventId, timeStr) {
             renderBookingList();
             Swal.fire({ title: '已取消', text: '您的預約已成功取消', icon: 'success', confirmButtonColor: '#2d5a4c' });
             localStorage.removeItem('vip_line_' + lineUserId);
+            // 🚀 強迫立刻處理 Queue
+            fetch(GAS_URL, { 
+              method: 'POST', 
+              body: JSON.stringify({ action: 'triggerQueueNow' }) 
+            });
           } else { 
             Swal.fire('取消失敗', res.error, 'error'); 
           }
