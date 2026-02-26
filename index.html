@@ -481,6 +481,8 @@
         // 在背後偷偷戳後端，強迫立刻處理 Queue (客人完全沒感覺)
         fetch(GAS_URL, { 
           method: 'POST', 
+          mode: 'no-cors', // 💡 減少跨域檢查的開銷
+          keepalive: true,
           body: JSON.stringify({ action: 'triggerQueueNow' }) 
         });
       } else if (result.isConfirmed && !result.value.success) { 
