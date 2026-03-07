@@ -690,11 +690,14 @@ function cancelBooking(eventId, timeStr) {
             renderBookingList();
             Swal.fire({ title: '已取消', text: '您的預約已成功取消', icon: 'success', confirmButtonColor: '#2d5a4c' });
             localStorage.removeItem('vip_line_' + lineUserId);
-            // 🚀 強迫立刻處理 Queue
             fetch(GAS_URL, { 
               method: 'POST', 
+              mode: 'no-cors', // 💡 減少跨域檢查 (Preflight) 的負擔
+              keepalive: true, // 💡 重要：允許請求在頁面關閉後繼續在背景完成
               body: JSON.stringify({ action: 'triggerQueueNow' }) 
-            });
+            })
+            .then(() => { console.log("背景任務已喚醒"); })
+            .catch(err => { console.warn("背景觸發嘗試完成"); }); // 💡 必須捕捉錯誤，防止 Uncaught Promise 報錯
           } else { 
             Swal.fire('取消失敗', res.error, 'error'); 
           }
