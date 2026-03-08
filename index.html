@@ -122,21 +122,72 @@
     .ticket-box input[type="checkbox"] { width: 18px; height: 18px; margin: 0 10px 0 0; accent-color: var(--primary); cursor: pointer; }
 
     /* 預約紀錄清單 */
-    .booking-item { 
-      background: var(--card-bg); border-left: 6px solid var(--primary); 
-      padding: 15px 15px 15px 20px; margin-bottom: 12px; 
-      border-radius: 8px; box-shadow: 0 3px 8px rgba(0,0,0,0.05); 
-      display: flex; justify-content: space-between; align-items: center; 
+    /* ==========================================
+    預約卡片專用排版 (防跑版設計)
+    ========================================== */
+    .booking-card {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background-color: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+      border-left: 6px solid #2d5a4c; /* 左側綠色裝飾線 */
+      padding: 15px;
+      margin-bottom: 12px;
     }
-    .booking-title { font-weight: bold; color: var(--text-main); font-size: 16px; margin-bottom: 6px; }
-    .booking-date { color: var(--primary); font-size: 14px; display: flex; align-items: center; gap: 5px; }
-    .cancel-btn { 
-      background: var(--danger-btn); color: white; border: none; 
-      padding: 8px 16px; border-radius: 6px; cursor: pointer; 
-      font-size: 14px; font-weight: bold; transition: background 0.2s; 
-    }
-    .cancel-btn:hover { background: #73311e; }
 
+    /* 左側文字資訊區塊 */
+    .booking-info {
+      flex: 1; /* 佔滿剩餘空間 */
+      min-width: 0; /* 關鍵：防止內容溢出撐破外框 */
+      padding-right: 12px;
+    }
+
+    .booking-title {
+      font-size: 16px;
+      font-weight: bold;
+      color: #333;
+      margin-bottom: 8px;
+      /* 如果標題太長，字尾會變成 ... */
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* 日期與時間的容器 */
+    .booking-datetime {
+      display: flex;
+      flex-wrap: wrap; /* 關鍵：螢幕太窄時，時間會整塊掉到下一行，不會把字切斷 */
+      gap: 4px 12px; /* 上下間距 4px，左右間距 12px */
+      font-size: 14px;
+      color: #2d5a4c;
+      font-weight: 500;
+    }
+
+    /* 嚴格禁止日期與時間被斷行 */
+    .booking-date, .booking-time {
+      white-space: nowrap; 
+      display: flex;
+      align-items: center;
+    }
+
+  /* 右側取消按鈕 */
+  .booking-action {
+    flex-shrink: 0; /* 關鍵：保護按鈕不被左邊的文字擠扁 */
+  }
+
+  .cancel-btn {
+    background-color: #8e3e26;
+    color: #ffffff;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    white-space: nowrap; /* 按鈕文字也不能斷行 */
+  }
     /* 時間選擇網格 */
     .time-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 15px; }
     .time-slot { 
@@ -631,24 +682,59 @@
 
   function renderBookingList() {
     perfLog.start('渲染預約清單');
-    const container = document.getElementById('bookingList'); if (!container) return;
-    document.getElementById('history-section').style.display = 'block'; container.innerHTML = ''; 
-    if (!currentBookingList || currentBookingList.length === 0) { container.innerHTML = '<div style="color:var(--text-muted); padding:10px 0;">目前沒有預約</div>'; perfLog.end('渲染預約清單'); return; }
+    const container = document.getElementById('bookingList'); 
+    if (!container) return;
+    
+    document.getElementById('history-section').style.display = 'block'; 
+    container.innerHTML = ''; 
+    
+    if (!currentBookingList || currentBookingList.length === 0) { 
+      container.innerHTML = '<div style="color:var(--text-muted); padding:10px 0;">目前沒有預約</div>'; 
+      perfLog.end('渲染預約清單'); 
+      return; 
+    }
     
     currentBookingList.sort((a, b) => new Date(a.start) - new Date(b.start));
     let html = '';
+
     currentBookingList.forEach(booking => {
       const isTemp = booking.id && booking.id.toString().startsWith('temp_');
       const statusLabel = isTemp ? '<span style="color:#2d5a4c; font-weight:bold; font-size:12px; margin-left:5px;">(新!)</span>' : '';
-      let displayStart = booking.start.replace('T', ' ').substring(0, 16); let displayEnd = booking.end ? booking.end : ""; let timeString = displayEnd ? `${displayStart.split(' ')[1]} - ${displayEnd}` : displayStart;
+      let displayStart = booking.start.replace('T', ' ').substring(0, 16); 
+      let displayEnd = booking.end ? booking.end : ""; 
+      let timeString = displayEnd ? `${displayStart.split(' ')[1]} - ${displayEnd}` : displayStart;
       let cleanTitle = booking.title ? booking.title.replace(/(\(\d+分\))\s*(?=\1)/g, '') : '未命名預約';
 
-      html += `<div class="booking-item" style="${isTemp ? 'border-left-color:#8e3e26;' : ''}"><div class="booking-info"><div class="booking-title">${cleanTitle} ${statusLabel}</div><div class="booking-date">📅 ${displayStart.split(' ')[0]} <span style="margin-left:8px; color:var(--text-main); font-weight:bold;">${timeString}</span></div></div>${!isTemp ? `<button class="cancel-btn" onclick="cancelBooking('${booking.id}', '${displayStart}')">取消</button>` : ''}</div>`;
+      // 🛡️ 這裡套用了防跑版的三大魔法：
+      // 1. .booking-item 加上 display: flex 與 gap，確保左右佈局
+      // 2. booking-info 加上 min-width: 0，避免標題太長撐破版面
+      // 3. 📅 日期與時間拆成兩個 span，並各自加上 white-space: nowrap，嚴格禁止內部斷行！
+      // 4. flex-wrap: wrap 讓時間在小螢幕時會「整塊」掉到下一行，排版依舊漂亮
+      
+      html += `
+        <div class="booking-item" style="display: flex; justify-content: space-between; align-items: center; gap: 8px; ${isTemp ? 'border-left-color:#8e3e26;' : ''}">
+          
+          <div class="booking-info" style="flex: 1; min-width: 0;">
+            <div class="booking-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 6px;">
+              ${cleanTitle} ${statusLabel}
+            </div>
+            
+            <div class="booking-datetime" style="display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center;">
+              <span style="white-space: nowrap;">📅 ${displayStart.split(' ')[0]}</span>
+              <span style="white-space: nowrap; color:var(--text-main); font-weight:bold;">${timeString}</span>
+            </div>
+          </div>
+          
+          ${!isTemp ? `<button class="cancel-btn" onclick="cancelBooking('${booking.id}', '${displayStart}')" style="flex-shrink: 0; white-space: nowrap;">取消</button>` : ''}
+          
+        </div>
+      `;
     });
+    
     container.innerHTML = html;
     perfLog.end('渲染預約清單');
   }
-
+  
   function loadBookingHistory() {
     const listDiv = document.getElementById('bookingList'); if (currentBookingList.length === 0) { listDiv.innerHTML = '<div style="color:var(--text-muted); padding:10px 0;">載入中...</div>'; }
     document.getElementById('history-section').style.display = 'block';
