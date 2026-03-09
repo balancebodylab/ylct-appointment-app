@@ -680,7 +680,7 @@
     });
   }
 
-  function renderBookingList() {
+function renderBookingList() {
     perfLog.start('渲染預約清單');
     const container = document.getElementById('bookingList'); 
     if (!container) return;
@@ -698,19 +698,16 @@
     let html = '';
 
     currentBookingList.forEach(booking => {
+      // 判斷是否為剛建立的新預約
       const isTemp = booking.id && booking.id.toString().startsWith('temp_');
       const statusLabel = isTemp ? '<span style="color:#2d5a4c; font-weight:bold; font-size:12px; margin-left:5px;">(新!)</span>' : '';
+      
       let displayStart = booking.start.replace('T', ' ').substring(0, 16); 
       let displayEnd = booking.end ? booking.end : ""; 
       let timeString = displayEnd ? `${displayStart.split(' ')[1]} - ${displayEnd}` : displayStart;
       let cleanTitle = booking.title ? booking.title.replace(/(\(\d+分\))\s*(?=\1)/g, '') : '未命名預約';
 
-      // 🛡️ 這裡套用了防跑版的三大魔法：
-      // 1. .booking-item 加上 display: flex 與 gap，確保左右佈局
-      // 2. booking-info 加上 min-width: 0，避免標題太長撐破版面
-      // 3. 📅 日期與時間拆成兩個 span，並各自加上 white-space: nowrap，嚴格禁止內部斷行！
-      // 4. flex-wrap: wrap 讓時間在小螢幕時會「整塊」掉到下一行，排版依舊漂亮
-      
+      // 💡 關鍵修正：移除了 ${!isTemp ? ... : ''} 的限制，讓「取消」按鈕無條件顯示！
       html += `
         <div class="booking-item" style="display: flex; justify-content: space-between; align-items: center; gap: 8px; ${isTemp ? 'border-left-color:#8e3e26;' : ''}">
           
@@ -725,7 +722,7 @@
             </div>
           </div>
           
-          ${!isTemp ? `<button class="cancel-btn" onclick="cancelBooking('${booking.id}', '${displayStart}')" style="flex-shrink: 0; white-space: nowrap;">取消</button>` : ''}
+          <button class="cancel-btn" onclick="cancelBooking('${booking.id}', '${displayStart}')" style="flex-shrink: 0; white-space: nowrap;">取消</button>
           
         </div>
       `;
