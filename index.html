@@ -804,7 +804,8 @@ function cancelBooking(eventId, timeStr) {
           allowOutsideClick: false,
           didOpen: () => { Swal.showLoading(); }
         });
-
+        // 取消成功後，重置選取狀態
+        resetSelectionUI();
         perfLog.start('取消預約 API');
         // 🛡️ 關鍵修正：加入 true 在背景執行，隱藏全螢幕白遮罩
         sendRequest('cancelBooking', { eventId: eventId, phone: currentUser.phone, name: currentUser.name || lineDisplayName, lineUserId: lineUserId }, true).then(res => {
@@ -812,8 +813,7 @@ function cancelBooking(eventId, timeStr) {
           if(res.success) { 
             currentBookingList = currentBookingList.filter(b => b.id !== eventId); 
             renderBookingList();
-            // 取消成功後，重置選取狀態
-            resetSelectionUI();
+
             Swal.fire({ title: '已取消', text: '您的預約已成功取消', icon: 'success', confirmButtonColor: '#2d5a4c' });
             localStorage.removeItem('vip_line_' + lineUserId);
             fetch(GAS_URL, { 
