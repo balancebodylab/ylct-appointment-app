@@ -322,24 +322,57 @@
     console.log("==================================");
     
     perfLog.start('1. LIFF 初始化');
-    liff.init({ liffId: MY_LIFF_ID }).then(() => {
-      perfLog.end('1. LIFF 初始化');
-      if (liff.isLoggedIn()) {
-        perfLog.start('2. 獲取 LINE 使用者資訊');
-        liff.getProfile().then(p => {
-          perfLog.end('2. 獲取 LINE 使用者資訊');
-          lineUserId = p.userId;
-          lineDisplayName = p.displayName; 
+liff.init({ liffId: MY_LIFF_ID }).then(() => {
+  perfLog.end('1. LIFF 初始化');
+  
+  if (liff.isLoggedIn()) {
+    perfLog.start('2. 獲取 LINE 資訊與好友狀態');
+    
+    Promise.all([liff.getProfile(), liff.getFriendship()])
+      .then(([profile, friendship]) => {
+        perfLog.end('2. 獲取 LINE 資訊與好友狀態');
+        
+        lineUserId = profile.userId;
+        lineDisplayName = profile.displayName;
+
+        // 💡 檢查好友狀態：如果不是好友，僅跳出「提醒」但不阻斷
+        if (!friendship.friendFlag) {
+          Swal.fire({
+            title: '溫馨提醒',
+            text: '您尚未加入官方帳號好友，預約後將無法收到 LINE 自動通知喔！建議先加入好友。',
+            icon: 'info',
+            showCancelButton: true, // 顯示取消按鈕
+            confirmButtonText: '前往加好友',
+            cancelButtonText: '不用，直接預約', // 讓客人可以選直接預約
+            confirmButtonColor: '#2d5a4c',
+            cancelButtonColor: '#888',
+          }).then((result) => {
+            if (result.isConfirmed) {
+              // 導向加好友連結
+              window.location.href = "https://line.me/R/ti/p/@您的官方帳號ID";
+            } else {
+              // 客人選擇「直接預約」，繼續執行載入邏輯
+              backgroundCheckLogin(lineUserId);
+            }
+          });
+        } else {
+          // ✅ 已經是好友，直接進入系統
           backgroundCheckLogin(lineUserId);
-        });
-      } else {
-        console.log("⚠️ 使用者未登入 LINE，執行跳轉...");
-        liff.login(); 
-      }
-    }).catch(e => {
-      console.error("❌ LIFF Error:", e);
-      Swal.fire('錯誤', 'LIFF 初始化失敗', 'error');
-    });
+        }
+      })
+      .catch(e => {
+        console.error("❌ 獲取資料失敗:", e);
+        const idToken = liff.getDecodedIDToken();
+        if (idToken && idToken.sub) backgroundCheckLogin(idToken.sub);
+      });
+      
+  } else {
+    liff.login(); 
+  }
+}).catch(e => {
+  console.error("❌ LIFF Error:", e);
+  Swal.fire('錯誤', 'LIFF 初始化失敗', 'error');
+});
 
     const today = new Date();
     document.getElementById('datePicker').min = today.toISOString().split('T')[0];
