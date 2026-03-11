@@ -349,7 +349,10 @@ liff.init({ liffId: MY_LIFF_ID }).then(() => {
           }).then((result) => {
             if (result.isConfirmed) {
               // 導向加好友連結
-              window.location.href = "https://lin.ee/AJXNZl3";
+              liff.openWindow({
+                url: "https://lin.ee/AJXNZl3",
+                external: false 
+              });
             } else {
               // 客人選擇「直接預約」，繼續執行載入邏輯
               backgroundCheckLogin(lineUserId);
