@@ -564,7 +564,6 @@ liff.init({ liffId: MY_LIFF_ID }).then(() => {
         currentBookingList.push({ id: 'temp_' + Date.now(), title: reqData.customPlanName, start: `${reqData.date} ${reqData.time}`, end: endTimeStr });
         renderBookingList();
         // 2.重置 UI 狀態，移除綠框與選擇
-        resetSelectionUI();
         Swal.fire({ title: '預約成功！', text: '您的預約已新增至列表', icon: 'success', timer: 2000, showConfirmButton: false });
         resetSelection(); localStorage.removeItem('vip_line_' + lineUserId);
         // 在背後偷偷戳後端，強迫立刻處理 Queue (客人完全沒感覺)
@@ -654,8 +653,49 @@ liff.init({ liffId: MY_LIFF_ID }).then(() => {
     else { const opt = document.getElementById('opt-single'); if (opt) opt.classList.add('selected'); updateSinglePlanLogic(); }
   }
 
-  function resetSelection() { selectedTime = null; document.getElementById('datePicker').value = ''; document.getElementById('slotsContainer').innerHTML = ''; document.getElementById('confirmBtn').style.display = 'none'; document.getElementById('time-section').style.display = 'none'; }
+/**
+ * 🧹 全域 UI 重置 (大一統版本)
+ * 用於：切換方案、預約完成、取消預約成功後
+ */
+function resetSelection() {
+  console.log("🧼 執行全域 UI 重置...");
 
+  // 1. 邏輯變數歸零
+  selectedTime = null;
+  selectedPlan = null;
+  useTicket = false;
+  finalPlanDetailName = null;
+
+  // 2. 日期與時段清空
+  const datePicker = document.getElementById('datePicker');
+  if (datePicker) datePicker.value = '';
+
+  const slots = document.getElementById('slotsContainer');
+  if (slots) slots.innerHTML = '';
+
+  const timeSection = document.getElementById('time-section');
+  if (timeSection) timeSection.style.display = 'none';
+
+  const confirmBtn = document.getElementById('confirmBtn');
+  if (confirmBtn) confirmBtn.style.display = 'none';
+
+  const timeDisplay = document.getElementById('selected-time-display');
+  if (timeDisplay) timeDisplay.innerText = '請選擇時間';
+
+  // 3. 徹底拔除「綠框」與「選取狀態」 (關鍵！)
+  // 這裡會搜尋所有可能的選取樣式並強制移除
+  document.querySelectorAll('.option-card, .course-card, .time-slot, .plan-option').forEach(el => {
+    el.classList.remove('selected', 'active', 'checked');
+    el.style.borderColor = "#ddd"; // 恢復灰框
+    el.style.backgroundColor = "transparent";
+  });
+
+  // 4. 重置所有勾選框與下拉選單
+  document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+  document.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
+
+  console.log("✅ 介面已完全恢復初始狀態");
+}
   function updateCoursePlanLogic() {
     if(selectedPlan !== 'COURSE') return;
     const select = document.getElementById('coursePlanSelect'), ticketCheck = document.getElementById('courseUseTicket'), ticketHint = document.getElementById('courseTicketHint');
@@ -805,7 +845,7 @@ function cancelBooking(eventId, timeStr) {
           didOpen: () => { Swal.showLoading(); }
         });
         // 取消成功後，重置選取狀態
-        resetSelectionUI();
+        resetSelection();
         perfLog.start('取消預約 API');
         // 🛡️ 關鍵修正：加入 true 在背景執行，隱藏全螢幕白遮罩
         sendRequest('cancelBooking', { eventId: eventId, phone: currentUser.phone, name: currentUser.name || lineDisplayName, lineUserId: lineUserId }, true).then(res => {
@@ -832,29 +872,7 @@ function cancelBooking(eventId, timeStr) {
     });
   }
 
-/**
- * 🧹 UI 重置工具：清除所有選取狀態與框線
- */
-function resetSelectionUI() {
-  // 1. 重置全域選取變數
-  selectedPlan = null; 
-  
-  // 2. 移除所有卡片的綠框 (假設您的 CSS 類別是 .active)
-  document.querySelectorAll('.course-card, .plan-card').forEach(el => {
-    el.classList.remove('active');
-    el.style.border = "2px solid #eee"; // 強制恢復成灰框
-  });
 
-  // 3. 取消勾選抵用券 (如果有)
-  const ticketCheck = document.getElementById('useTicket');
-  if (ticketCheck) ticketCheck.checked = false;
-
-  // 4. 重置下拉選單 (堂數)
-  const courseSelect = document.querySelector('select'); // 根據您的 ID 調整
-  if (courseSelect) courseSelect.selectedIndex = 0;
-
-  console.log("🧼 介面選取狀態已清空");
-}
 </script>
 </body>
 </html>
