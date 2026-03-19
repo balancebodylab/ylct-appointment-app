@@ -571,7 +571,20 @@ liff.init({ liffId: MY_LIFF_ID }).then(() => {
         while (endM >= 60) { endH++; endM -= 60; }
         const endTimeStr = `${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
 
-        currentBookingList.push({ id: 'temp_' + Date.now(), title: reqData.customPlanName, start: `${reqData.date} ${reqData.time}`, end: endTimeStr });
+        const newBooking = {
+          id: result.value.eventId || ('temp_' + Date.now()), // 優先用真實 ID
+          title: reqData.customPlanName,
+          start: `${reqData.date} ${reqData.time}`,
+          end: endTimeStr,
+          // ⚡️ 補全這些欄位，取消時才不會是空的
+          plan: reqData.plan, 
+          duration: reqData.duration,
+          customPlanName: reqData.customPlanName,
+          realCourseName: reqData.realCourseName,
+          useTicket: reqData.useTicket
+        };
+
+        currentBookingList.push(newBooking);
         renderBookingList();
         Swal.fire({ title: '預約成功！', text: '您的預約已新增至列表', icon: 'success', timer: 2000, showConfirmButton: false });
         resetSelectionUI(); localStorage.removeItem('vip_line_' + lineUserId);
