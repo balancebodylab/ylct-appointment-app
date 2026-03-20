@@ -293,7 +293,7 @@
   // ⚙️ 系統設定區
   // ==========================================
   const GAS_URL = "https://script.google.com/macros/s/AKfycbwcGU8Sjw1feT6J-clxiDlUSEEzjahIFg_lMR64RlLqKwVH4-zqMty9z7Nk6IK8e2O7Mg/exec";
-  const MY_LIFF_ID = '2008933800-UrZptDbA'; 
+  const MY_LIFF_ID = "<?= LIFF_ID ?>";
   const CACHE_DURATION = 5 * 60 * 1000; 
 
   // ==========================================
@@ -373,6 +373,7 @@ liff.init({ liffId: MY_LIFF_ID }).then(() => {
     liff.login(); 
   }
 }).catch(e => {
+  console.log(MY_LIFF_ID)
   console.error("❌ LIFF Error:", e);
   Swal.fire('錯誤', 'LIFF 初始化失敗', 'error');
 });
