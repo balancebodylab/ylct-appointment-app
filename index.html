@@ -415,20 +415,86 @@ liff.init({ liffId: MY_LIFF_ID }).then(() => {
       lineDisplayName: displayName // 👈 關鍵：把名字傳給後端
     }, true).then(res => {
       isLoginChecked = true;
-      if (res.success) {
-        // 處理自動綁定或正常登入邏輯...
+    if (res.success) {
+      // 📝 情況 A: 成功登入 (已綁定或系統自動完成綁定)
+      if (res.status === "LOGGED_IN" || res.status === "AUTO_BOUND") {
+        if (res.status === "AUTO_BOUND") {
+          Swal.fire({
+            title: '歡迎回來！',
+            text: `系統已自動識別您的身分：${res.user.name}`,
+            icon: 'success',
+            timer: 2000,
+            showConfirmButton: false
+          });
+        }
+        
         currentUser = res.user;
-        saveLocalUserData(uid, res.user);
+        saveLocalUserData(uid, currentUser);
         isNewUser = false;
-      } else {
-        // 找不到人，標記為新朋友
-        isNewUser = true;
-        currentUser = { name: displayName, phone: '', planName: '新客體驗' };
+        if (typeof getBookingHistory === 'function') getBookingHistory(currentUser.phone);
+      } 
+      
+    // 📝 情況 B: 找到名字但需要驗證電話 (補全缺失資料)
+    else if (res.status === "NEED_PHONE_VERIFY") {
+        handleOldUserBinding(uid, res.tempMatch);
       }
+    } 
+    // 📝 情況 C: 完全找不到紀錄 (真正的新朋友)
+    else {
+          console.log("🆕 [新朋友] 準備進入註冊流程");
+          isNewUser = true;
+          currentUser = { 
+            name: lineDisplayName || '新朋友', 
+            phone: '', 
+            planName: '新客體驗', 
+            courseBalance: 0, 
+            ticketBalance: 0 
+          };
+        }
       perfLog.end('3. 背景身分驗證');
     });
   }
- // ==========================================
+  /**
+   * 📱 處理老用戶電話補全與綁定
+   */
+  function handleOldUserBinding(uid, tempMatch) {
+  Swal.fire({
+    title: '找到您的紀錄了！',
+    text: `歡迎回來 ${tempMatch.name}！請輸入您的手機號碼以完成 LINE 帳號綁定：`,
+    input: 'tel',
+    inputPlaceholder: '0912345678',
+    allowOutsideClick: false,
+    confirmButtonText: '確認綁定',
+    confirmButtonColor: '#2d5a4c',
+    preConfirm: (value) => {
+      if (!/^09\d{8}$/.test(value)) {
+        Swal.showValidationMessage('請輸入正確的台灣手機格式');
+      }
+      return value;
+    }
+  }).then((result) => {
+    if (result.isConfirmed) {
+      // 發送請求將 UID 與電話填回試算表
+      sendRequest('completeBinding', {
+        lineUserId: uid,
+        phone: result.value,
+        rowIndex: tempMatch.rowIndex
+      }, true).then(bindRes => {
+        if (bindRes.success) {
+          Swal.fire('綁定成功', '您現在可以使用完整預約功能了！', 'success');
+          currentUser = bindRes.user;
+          saveLocalUserData(uid, currentUser);
+          isNewUser = false;
+          getBookingHistory(currentUser.phone);
+        } else {
+          Swal.fire('錯誤', '綁定失敗，請聯繫店員', 'error');
+        }
+      });
+    }
+  });
+}
+ 
+// ==========================================
   // 🔄 前往預約與規則同意
   // ==========================================
 // ==========================================
