@@ -432,10 +432,9 @@ liff.init({ liffId: MY_LIFF_ID }).then(() => {
         saveLocalUserData(uid, currentUser);
         isNewUser = false;
         if (typeof getBookingHistory === 'function') getBookingHistory(currentUser.phone);
-      } 
-      
-    // 📝 情況 B: 找到名字但需要驗證電話 (補全缺失資料)
-    else if (res.status === "NEED_PHONE_VERIFY") {
+      }       
+      // 📝 情況 B: 找到名字但需要驗證電話 (補全缺失資料)
+      else if (res.status === "NEED_PHONE_VERIFY") {
         handleOldUserBinding(uid, res.tempMatch);
       }
     } 
