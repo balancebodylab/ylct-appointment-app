@@ -322,7 +322,7 @@
     console.log("==================================");
     
     perfLog.start('1. LIFF 初始化');
-liff.init({ liffId: MY_LIFF_ID }).then(() => {
+  liff.init({ liffId: MY_LIFF_ID }).then(() => {
   perfLog.end('1. LIFF 初始化');
   
   if (liff.isLoggedIn()) {
@@ -355,18 +355,18 @@ liff.init({ liffId: MY_LIFF_ID }).then(() => {
               });
             } else {
               // 客人選擇「直接預約」，繼續執行載入邏輯
-              backgroundCheckLogin(lineUserId);
+              backgroundCheckLogin(lineUserId,lineDisplayName);
             }
           });
         } else {
           // ✅ 已經是好友，直接進入系統
-          backgroundCheckLogin(lineUserId);
+          backgroundCheckLogin(lineUserId,lineDisplayName);
         }
       })
       .catch(e => {
         console.error("❌ 獲取資料失敗:", e);
         const idToken = liff.getDecodedIDToken();
-        if (idToken && idToken.sub) backgroundCheckLogin(idToken.sub);
+        if (idToken && idToken.sub) backgroundCheckLogin(idToken.sub,lineDisplayName);
       });
       
   } else {
@@ -394,30 +394,38 @@ liff.init({ liffId: MY_LIFF_ID }).then(() => {
     }, 50);
   }
 
-  function backgroundCheckLogin(uid) {
-    perfLog.start('3. 背景身分驗證 (快取/API)');
+
+  function backgroundCheckLogin(uid, displayName) {
+    perfLog.start('3. 背景身分驗證');
+    
+    // 1. 檢查快取
     const cachedData = getLocalUserData(uid);
     if (cachedData) {
-      console.log("⚡ [快取命中] 讀取本地會員資料");
       currentUser = cachedData;
-      isNewUser = false;
       isLoginChecked = true;
-      perfLog.end('3. 背景身分驗證 (快取/API)');
+      perfLog.end('3. 背景身分驗證');
       return;
     }
 
-    console.log("🌐 [快取未命中] 向伺服器請求會員資料...");
-    sendRequest('loginByLine', { lineUserId: uid }, true).then(res => {
+    // 2. 快取未命中，呼叫後端並帶入名字
+    console.log(`🌐 嘗試識別會員: ${displayName} (${uid})`);
+    
+    sendRequest('loginByLine', { 
+      lineUserId: uid, 
+      lineDisplayName: displayName // 👈 關鍵：把名字傳給後端
+    }, true).then(res => {
       isLoginChecked = true;
       if (res.success) {
-        saveLocalUserData(uid, res.user);
+        // 處理自動綁定或正常登入邏輯...
         currentUser = res.user;
+        saveLocalUserData(uid, res.user);
         isNewUser = false;
       } else {
+        // 找不到人，標記為新朋友
         isNewUser = true;
-        currentUser = { name: lineDisplayName || '新朋友', phone: '', planName: '新客體驗', courseBalance: 0, ticketBalance: 0 };
+        currentUser = { name: displayName, phone: '', planName: '新客體驗' };
       }
-      perfLog.end('3. 背景身分驗證 (快取/API)');
+      perfLog.end('3. 背景身分驗證');
     });
   }
 
