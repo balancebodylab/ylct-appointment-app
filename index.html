@@ -322,7 +322,7 @@
     console.log("==================================");
     
     perfLog.start('1. LIFF 初始化');
-  liff.init({ liffId: MY_LIFF_ID }).then(() => {
+liff.init({ liffId: MY_LIFF_ID }).then(() => {
   perfLog.end('1. LIFF 初始化');
   
   if (liff.isLoggedIn()) {
@@ -428,7 +428,6 @@
       perfLog.end('3. 背景身分驗證');
     });
   }
-
  // ==========================================
   // 🔄 前往預約與規則同意
   // ==========================================
@@ -579,7 +578,20 @@
         while (endM >= 60) { endH++; endM -= 60; }
         const endTimeStr = `${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
 
-        currentBookingList.push({ id: 'temp_' + Date.now(), title: reqData.customPlanName, start: `${reqData.date} ${reqData.time}`, end: endTimeStr });
+        const newBooking = {
+          id: result.value.eventId || ('temp_' + Date.now()), // 優先用真實 ID
+          title: reqData.customPlanName,
+          start: `${reqData.date} ${reqData.time}`,
+          end: endTimeStr,
+          // ⚡️ 補全這些欄位，取消時才不會是空的
+          plan: reqData.plan, 
+          duration: reqData.duration,
+          customPlanName: reqData.customPlanName,
+          realCourseName: reqData.realCourseName,
+          useTicket: reqData.useTicket
+        };
+
+        currentBookingList.push(newBooking);
         renderBookingList();
         Swal.fire({ title: '預約成功！', text: '您的預約已新增至列表', icon: 'success', timer: 2000, showConfirmButton: false });
         resetSelectionUI(); localStorage.removeItem('vip_line_' + lineUserId);
@@ -827,54 +839,75 @@
   }
 
 function cancelBooking(eventId, timeStr) {
-    Swal.fire({ 
-      title: '取消預約', 
-      text: `確定要取消 ${timeStr} 的預約嗎？`, 
-      icon: 'warning', 
-      showCancelButton: true, 
-      confirmButtonColor: '#8e3e26', 
-      cancelButtonColor: '#666', 
-      confirmButtonText: '是的，取消它', 
-      cancelButtonText: '保留' 
-    }).then((result) => {
-      if (result.isConfirmed) {
-        
-        // 🛑 取代醜醜的白畫面：改用精緻的 Swal 載入視窗
-        Swal.fire({
-          title: '處理中...',
-          text: '正在為您取消預約',
-          allowOutsideClick: false,
-          didOpen: () => { Swal.showLoading(); }
-        });
-        // 取消成功後，重置選取狀態
-        resetSelectionUI();
-        perfLog.start('取消預約 API');
-        // 🛡️ 關鍵修正：加入 true 在背景執行，隱藏全螢幕白遮罩
-        sendRequest('cancelBooking', { eventId: eventId, phone: currentUser.phone, name: currentUser.name || lineDisplayName, lineUserId: lineUserId }, true).then(res => {
-          perfLog.end('取消預約 API');
-          if(res.success) { 
-            currentBookingList = currentBookingList.filter(b => b.id !== eventId); 
-            renderBookingList();
+  // 🔍 關鍵：從目前的預約清單中找出這筆資料，以獲取方案與課程名稱等細節
+  const booking = currentBookingList.find(b => b.id === eventId);
 
-            Swal.fire({ title: '已取消', text: '您的預約已成功取消', icon: 'success', confirmButtonColor: '#2d5a4c' });
-            localStorage.removeItem('vip_line_' + lineUserId);
-            fetch(GAS_URL, { 
-              method: 'POST', 
-              mode: 'no-cors', // 💡 減少跨域檢查 (Preflight) 的負擔
-              keepalive: true, // 💡 重要：允許請求在頁面關閉後繼續在背景完成
-              body: JSON.stringify({ action: 'triggerQueueNow' }) 
-            })
-            .then(() => { console.log("背景任務已喚醒"); })
-            .catch(err => { console.warn("背景觸發嘗試完成"); }); // 💡 必須捕捉錯誤，防止 Uncaught Promise 報錯
-          } else { 
-            Swal.fire('取消失敗', res.error, 'error'); 
-          }
-        });
-      }
-    });
-  }
+  Swal.fire({ 
+    title: '取消預約', 
+    text: `確定要取消 ${timeStr} 的預約嗎？`, 
+    icon: 'warning', 
+    showCancelButton: true, 
+    confirmButtonColor: '#8e3e26', 
+    cancelButtonColor: '#666', 
+    confirmButtonText: '是的，取消它', 
+    cancelButtonText: '保留' 
+  }).then((result) => {
+    if (result.isConfirmed) {
+      
+      Swal.fire({
+        title: '處理中...',
+        text: '正在為您取消預約',
+        allowOutsideClick: false,
+        didOpen: () => { Swal.showLoading(); }
+      });
 
+      // 🧼 重置介面 (統一使用合併後的 resetSelection)
+      if (typeof resetSelection === 'function') resetSelection();
 
+      perfLog.start('取消預約 API');
+
+      // 🚀 建立與後端完全對齊的完整 Payload
+      const cancelData = {
+        eventId: eventId,
+        dateTimeStr: timeStr,                                     // 傳入的時間字串
+        name: currentUser.name || lineDisplayName,
+        phone: currentUser.phone,
+        lineUserId: lineUserId,
+        // 從預約物件中抓取詳細資訊，若找不到則給予預設值
+        duration: booking ? (booking.duration || 50) : 50,
+        plan: booking ? booking.plan : '',
+        useTicket: booking ? booking.useTicket : false,
+        customPlanName: booking ? (booking.customPlanName || booking.title) : '一般方案',
+        realCourseName: booking ? (booking.realCourseName || booking.title) : '課程扣抵'
+      };
+
+      // 🛡️ 發送請求
+      sendRequest('cancelBooking', cancelData, true).then(res => {
+        perfLog.end('取消預約 API');
+        if(res.success) { 
+          // 更新前端列表
+          currentBookingList = currentBookingList.filter(b => b.id !== eventId); 
+          renderBookingList();
+
+          Swal.fire({ title: '已取消', text: '您的預約已成功取消', icon: 'success', confirmButtonColor: '#2d5a4c' });
+          
+          // 清除快取並喚醒背景任務
+          localStorage.removeItem('vip_line_' + lineUserId);
+          fetch(GAS_URL, { 
+            method: 'POST', 
+            mode: 'no-cors', 
+            keepalive: true, 
+            body: JSON.stringify({ action: 'triggerQueueNow' }) 
+          })
+          .then(() => { console.log("背景任務已喚醒"); })
+          .catch(err => { console.warn("背景觸發嘗試完成"); }); 
+        } else { 
+          Swal.fire('取消失敗', res.error, 'error'); 
+        }
+      });
+    }
+  });
+}
 </script>
 </body>
 </html>
