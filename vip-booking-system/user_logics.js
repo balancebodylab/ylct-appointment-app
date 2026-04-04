@@ -84,7 +84,7 @@ function loginUser(phone) {
 // ==========================================
 // 1. 新增：透過 Line ID 登入
 // ==========================================
-/*function loginByLine(lineUserId) {
+function loginByLine(lineUserId) {
   const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName("客戶資料總覽");
   const data = sheet.getDataRange().getValues();
   const headers = data[2];
@@ -105,7 +105,7 @@ function loginUser(phone) {
 
   return { success: false, message: "找不到會員資料" }; // 前端收到這個會跳轉去註冊
 }
-*/
+/*
 function loginByLine(data) {
   const uid = data.lineUserId;
   const displayName = data.lineDisplayName; // 👈 接收前端傳來的朋友姓名
@@ -155,6 +155,7 @@ function loginByLine(data) {
 
   return { success: false, message: "查無此人" };
 }
+*/
 // ==========================================
 // 補全老客戶資料並綁定 LineID
 // ==========================================

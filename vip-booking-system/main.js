@@ -1,7 +1,7 @@
 // Current Logic Version: v8.6 - Integrated Identity & Auto-binding
 // ================= 主程式入口 (Main) =================
 // 它是整個 API 的入口，負責分配工作。
-// ================= 主程式入口 (Main.gs - Debug版) =================
+
 function doPost(e) {
   // ⏱️ 全局計時開始
   const globalStart = new Date().getTime(); 
