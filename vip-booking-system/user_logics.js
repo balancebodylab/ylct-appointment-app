@@ -90,7 +90,7 @@ function loginByLine(lineUserId) {
   const headers = data[2];
 
   // 找出 "LineID" 在第幾欄
-  let lineColIdx = headers.indexOf("LineID"); 
+  let lineColIdx = headers.indexOf("Line ID"); 
   if (lineColIdx === -1) {
     return { success: false, message: "系統錯誤：找不到 LineID 欄位" };
   }
