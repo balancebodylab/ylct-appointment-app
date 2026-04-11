@@ -101,8 +101,8 @@ function doProcessCreateLogAndNotify(d) {
     d.dateTime,               // E: 預約日期時間
     d.courseName,             // F: 課程名稱
     d.planContent,            // G: 方案內容
-    d.plan === 'COURSE' ? 1 : 0,               // H: 方案類型 (COURSE/SINGLE)
-    d.plan === 'SINGLE' ? 1 : 0,               // H: 方案類型 (COURSE/SINGLE)
+    d.courseDeduction,
+    d.singleCount,               // H: 方案類型 (COURSE/SINGLE)
     d.ticketVal || 0,         // J: 加時卷 (1 或 0)
     d.serviceDuration,        // K: 時長 (純數字)
     "預約成功"                 // L: 狀態
