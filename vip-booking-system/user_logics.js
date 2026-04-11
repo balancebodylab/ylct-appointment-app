@@ -89,10 +89,10 @@ function loginByLine(lineUserId) {
   const data = sheet.getDataRange().getValues();
   const headers = data[2];
 
-  // 找出 "LineID" 在第幾欄
+  // 找出 "Line ID" 在第幾欄
   let lineColIdx = headers.indexOf("Line ID"); 
   if (lineColIdx === -1) {
-    return { success: false, message: "系統錯誤：找不到 LineID 欄位" };
+    return { success: false, message: "系統錯誤：找不到 Line ID 欄位" };
   }
 
   // 搜尋符合的 Line ID
@@ -117,7 +117,7 @@ function loginByLine(data) {
   const col = {
     name: headers.indexOf("姓名"),
     phone: headers.indexOf("電話"),
-    lineId: headers.indexOf("LineID")
+    lineId: headers.indexOf("Line ID")
   };
 
   let potentialMatch = null;
@@ -126,12 +126,12 @@ function loginByLine(data) {
   for (let i = 3; i < rows.length; i++) {
     const row = rows[i];
     
-    // 🔍 1. 優先比對 LineID (最精準)
+    // 🔍 1. 優先比對 Line ID (最精準)
     if (String(row[col.lineId]) === String(uid)) {
       return { success: true, status: "LOGGED_IN", user: rowToUserObj(row, headers) };
     }
 
-    // 🔍 2. 備案：比對姓名 (且該列尚未綁定 LineID)
+    // 🔍 2. 備案：比對姓名 (且該列尚未綁定 Line ID)
     if (!row[col.lineId] && String(row[col.name]) === String(displayName)) {
       potentialMatch = {
         rowIndex: i + 1,
@@ -157,7 +157,7 @@ function loginByLine(data) {
 }
 */
 // ==========================================
-// 補全老客戶資料並綁定 LineID
+// 補全老客戶資料並綁定 Line ID
 // ==========================================
 function completeBinding(lineUserId, phone, rowIndex) {
   try {
@@ -166,10 +166,10 @@ function completeBinding(lineUserId, phone, rowIndex) {
     
     const colIdx = {
       phone: headers.indexOf("電話") + 1,
-      lineId: headers.indexOf("LineID") + 1
+      lineId: headers.indexOf("Line ID") + 1
     };
 
-    // 寫入電話與 LineID
+    // 寫入電話與 Line ID
     sheet.getRange(rowIndex, colIdx.phone).setValue(phone);
     sheet.getRange(rowIndex, colIdx.lineId).setValue(lineUserId);
 
@@ -190,7 +190,7 @@ function registerNewUser(d) {
   const sheet = ss.getSheetByName("客戶名單");
   
   // 準備要寫入的資料
-  // 假設欄位順序：[姓名, 電話, 方案內容, 剩餘堂數, 抵用卷, LineID, 備註]
+  // 假設欄位順序：[姓名, 電話, 方案內容, 剩餘堂數, 抵用卷, Line ID, 備註]
   // ⚠️ 請依照您實際的 Sheet 欄位順序調整這裡！
   
   // 預設新會員資料
