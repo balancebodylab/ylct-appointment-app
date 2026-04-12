@@ -242,11 +242,7 @@ function buildBookingRecordRow_(d, status) {
   row[BOOKING_RECORD_COLUMN.PAYMENT_STATUS] = singleBooking > 0 && status !== '已取消' ? '未付款' : '';
   row[BOOKING_RECORD_COLUMN.OFFSET_TYPE] = inferBookingOffsetTypeForRecord_(courseDeduction, singleBooking, extraTicket, planContent);
   row[BOOKING_RECORD_COLUMN.CREATED_AT] = new Date();
-  row[BOOKING_RECORD_COLUMN.NOTE] = [
-    planContent ? '方案內容：' + planContent : '',
-    courseName && courseName !== serviceItem ? 'LIFF課程名稱：' + courseName : '',
-    d.eventId ? 'LIFF暫存事件ID：' + d.eventId : ''
-  ].filter(Boolean).join('\n');
+  row[BOOKING_RECORD_COLUMN.NOTE] = d.note || '';
   row[BOOKING_RECORD_COLUMN.SOURCE_CHANNEL] = 'LIFF';
 
   const customer = findBookingCustomerForRecord_(row, customers);
