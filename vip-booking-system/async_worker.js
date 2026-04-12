@@ -1,6 +1,277 @@
 // ================= 背景工作處理 (AsyncWorker v8.2.0 Early Unlock) =================
 
 const QUEUE_CACHE_KEY = 'SYSTEM_TASK_QUEUE';
+const BOOKING_RECORD_SHEET_NAME = '預約紀錄';
+const BOOKING_RECORD_TOTAL_COLUMNS = 27;
+const DEFAULT_BOOKING_COACH_NAME = 'Graysen';
+
+const BOOKING_RECORD_COLUMN = {
+  BOOKING_ID: 0,
+  CUSTOMER_ID: 1,
+  CUSTOMER_NAME: 2,
+  PHONE: 3,
+  LINE_ID: 4,
+  BOOKING_DATE: 5,
+  START_TIME: 6,
+  COURSE_DEDUCTION: 7,
+  SINGLE_BOOKING: 8,
+  EXTRA_TICKET: 9,
+  DURATION_MINUTES: 10,
+  SERVICE_ITEM: 11,
+  COACH_NAME: 12,
+  BOOKING_STATUS: 13,
+  PAYMENT_STATUS: 14,
+  OFFSET_TYPE: 15,
+  COURSE_TYPE: 16,
+  SHOULD_DEDUCT_CLASS: 17,
+  CUSTOMER_SOURCE: 18,
+  CREATED_AT: 19,
+  UPDATED_AT: 20,
+  NOTE: 21,
+  CALENDAR_EVENT_ID: 22,
+  SYNC_STATUS: 23,
+  LAST_SYNCED_AT: 24,
+  SYNC_MESSAGE: 25,
+  SOURCE_CHANNEL: 26
+};
+
+const BOOKING_RECORD_HEADERS = [
+  '預約編號',
+  '客戶編號',
+  '客戶姓名',
+  '電話',
+  'Line ID',
+  '預約日期',
+  '開始時間',
+  '課程扣抵',
+  '單次預約',
+  '加時券',
+  '時長',
+  '服務項目',
+  '教練名稱',
+  '預約狀態',
+  '付款狀態',
+  '扣抵類型',
+  '課程類型',
+  '是否需扣堂',
+  '客戶來源',
+  '建立時間',
+  '更新時間',
+  '備註',
+  'Calendar Event ID',
+  '同步狀態',
+  '最後同步時間',
+  '同步訊息',
+  '來源渠道'
+];
+
+function parseBookingNumber_(value) {
+  if (typeof value === 'number') return value;
+  const text = String(value == null ? '' : value).trim();
+  if (!text) return 0;
+  const match = text.match(/(\d+(?:\.\d+)?)/);
+  return match ? Number(match[1]) : 0;
+}
+
+function normalizeBookingLookupKey_(value) {
+  return String(value == null ? '' : value)
+    .trim()
+    .replace(/^'/, '')
+    .toLowerCase()
+    .replace(/\s+/g, '');
+}
+
+function normalizeBookingDateTime_(value) {
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return {
+      date: value,
+      time: Utilities.formatDate(value, Session.getScriptTimeZone(), 'HH:mm')
+    };
+  }
+
+  const text = String(value == null ? '' : value).trim();
+  if (!text) return { date: '', time: '' };
+
+  const match = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{2})/);
+  if (!match) return { date: text, time: '' };
+
+  return {
+    date: new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])),
+    time: String(match[4]).padStart(2, '0') + ':' + match[5]
+  };
+}
+
+function normalizeBookingStatusForRecord_(value) {
+  const status = String(value == null ? '' : value).trim();
+  if (!status) return '';
+  if (status === '預約成功') return '已預約';
+  if (status.indexOf('取消') !== -1) return '已取消';
+  return status;
+}
+
+function inferBookingOffsetTypeForRecord_(courseDeduction, singleBooking, extraTicket, planContent) {
+  const courseCount = parseBookingNumber_(courseDeduction);
+  const singleCount = parseBookingNumber_(singleBooking);
+  const extraCount = parseBookingNumber_(extraTicket);
+  const planText = String(planContent || '');
+
+  if (singleCount > 0) return '無';
+  if (courseCount > 0 && extraCount > 0) return '課程扣堂+加時券扣堂';
+  if (extraCount > 0) return '加時券扣堂';
+  if (courseCount > 0 || planText.indexOf('課程扣抵') !== -1) return '課程扣堂';
+  return '無';
+}
+
+function getBookingCustomerDirectory_(ss) {
+  const sheet = ss.getSheetByName('客戶名單');
+  const customers = {};
+  if (!sheet || sheet.getLastRow() < 2) return customers;
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 7).getValues();
+  rows.forEach(row => {
+    const id = row[0];
+    if (!id) return;
+    customers[String(id)] = {
+      id: id,
+      name: row[1] || '',
+      phone: row[2] == null ? '' : String(row[2]).replace(/^'/, '').trim(),
+      lineId: row[3] == null ? '' : String(row[3]).trim(),
+      source: row[6] == null ? '' : String(row[6]).trim()
+    };
+  });
+  return customers;
+}
+
+function findBookingCustomerForRecord_(bookingRow, customers) {
+  const lineId = normalizeBookingLookupKey_(bookingRow[BOOKING_RECORD_COLUMN.LINE_ID]);
+  const phone = normalizeBookingLookupKey_(bookingRow[BOOKING_RECORD_COLUMN.PHONE]);
+  const name = normalizeBookingLookupKey_(bookingRow[BOOKING_RECORD_COLUMN.CUSTOMER_NAME]);
+
+  for (let id in customers) {
+    const customer = customers[id];
+    if (lineId && normalizeBookingLookupKey_(customer.lineId) === lineId) return customer;
+    if (phone && normalizeBookingLookupKey_(customer.phone) === phone) return customer;
+  }
+
+  if (!name) return null;
+  const nameMatches = Object.keys(customers)
+    .map(id => customers[id])
+    .filter(customer => normalizeBookingLookupKey_(customer.name) === name);
+  return nameMatches.length === 1 ? nameMatches[0] : null;
+}
+
+function getBookingCourseDirectory_(ss) {
+  const sheet = ss.getSheetByName('課程名稱設定');
+  const courses = {};
+  if (!sheet || sheet.getLastRow() < 2) return courses;
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 15).getValues();
+  rows.forEach(row => {
+    const course = {
+      code: row[0] || '',
+      name: row[1] || '',
+      officialCourseName: row[2] || row[1] || '',
+      courseType: row[5] || '',
+      shouldDeductClass: row[6] || '',
+      mappedCourseName: row[12] || '',
+      isActive: String(row[13] == null ? '' : row[13]).trim()
+    };
+    if (!course.code && !course.name && !course.officialCourseName) return;
+
+    [
+      course.code,
+      course.name,
+      course.officialCourseName,
+      course.mappedCourseName
+    ].forEach(keyValue => {
+      const key = normalizeBookingLookupKey_(keyValue);
+      if (key && (!courses[key] || courses[key].isActive !== '是')) courses[key] = course;
+    });
+  });
+  return courses;
+}
+
+function resolveBookingServiceItemForRecord_(courseName, planContent, courses) {
+  const keys = [
+    normalizeBookingLookupKey_(courseName),
+    normalizeBookingLookupKey_(planContent)
+  ].filter(Boolean);
+
+  for (let i = 0; i < keys.length; i++) {
+    const course = courses[keys[i]];
+    if (course && course.name) return course.name;
+  }
+  return courseName || planContent || '';
+}
+
+function getBookingRecordSheet_(ss) {
+  let sheet = ss.getSheetByName(BOOKING_RECORD_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(BOOKING_RECORD_SHEET_NAME);
+    sheet.appendRow(BOOKING_RECORD_HEADERS);
+  }
+  return sheet;
+}
+
+function buildBookingRecordRow_(d, status) {
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  const customers = getBookingCustomerDirectory_(ss);
+  const courses = getBookingCourseDirectory_(ss);
+  const bookingDateTime = normalizeBookingDateTime_(d.dateTime || d.dateTimeStr);
+  const courseDeduction = parseBookingNumber_(d.courseDeduction != null ? d.courseDeduction : (d.plan === 'COURSE' ? 1 : 0));
+  const singleBooking = parseBookingNumber_(d.singleCount != null ? d.singleCount : (d.plan === 'SINGLE' ? 1 : 0));
+  const extraTicket = parseBookingNumber_(d.ticketVal != null ? d.ticketVal : (d.useTicket ? 1 : 0));
+  const durationMinutes = parseBookingNumber_(d.serviceDuration != null ? d.serviceDuration : d.duration);
+  const planContent = d.planContent || d.customPlanName || '';
+  const courseName = d.courseName || d.realCourseName || '';
+  const serviceItem = resolveBookingServiceItemForRecord_(courseName, planContent, courses);
+  const row = new Array(BOOKING_RECORD_TOTAL_COLUMNS).fill('');
+
+  row[BOOKING_RECORD_COLUMN.CUSTOMER_NAME] = d.name || '';
+  row[BOOKING_RECORD_COLUMN.PHONE] = d.phone == null ? '' : String(d.phone).replace(/^'/, '').trim();
+  row[BOOKING_RECORD_COLUMN.LINE_ID] = d.lineUserId || '';
+  row[BOOKING_RECORD_COLUMN.BOOKING_DATE] = bookingDateTime.date;
+  row[BOOKING_RECORD_COLUMN.START_TIME] = bookingDateTime.time;
+  row[BOOKING_RECORD_COLUMN.COURSE_DEDUCTION] = courseDeduction;
+  row[BOOKING_RECORD_COLUMN.SINGLE_BOOKING] = singleBooking;
+  row[BOOKING_RECORD_COLUMN.EXTRA_TICKET] = extraTicket;
+  row[BOOKING_RECORD_COLUMN.DURATION_MINUTES] = durationMinutes;
+  row[BOOKING_RECORD_COLUMN.SERVICE_ITEM] = serviceItem;
+  row[BOOKING_RECORD_COLUMN.COACH_NAME] = DEFAULT_BOOKING_COACH_NAME;
+  row[BOOKING_RECORD_COLUMN.BOOKING_STATUS] = normalizeBookingStatusForRecord_(status);
+  row[BOOKING_RECORD_COLUMN.PAYMENT_STATUS] = singleBooking > 0 && status !== '已取消' ? '未付款' : '';
+  row[BOOKING_RECORD_COLUMN.OFFSET_TYPE] = inferBookingOffsetTypeForRecord_(courseDeduction, singleBooking, extraTicket, planContent);
+  row[BOOKING_RECORD_COLUMN.CREATED_AT] = new Date();
+  row[BOOKING_RECORD_COLUMN.NOTE] = [
+    planContent ? '方案內容：' + planContent : '',
+    courseName && courseName !== serviceItem ? 'LIFF課程名稱：' + courseName : '',
+    d.eventId ? 'LIFF暫存事件ID：' + d.eventId : ''
+  ].filter(Boolean).join('\n');
+  row[BOOKING_RECORD_COLUMN.SOURCE_CHANNEL] = 'LIFF';
+
+  const customer = findBookingCustomerForRecord_(row, customers);
+  if (customer) {
+    row[BOOKING_RECORD_COLUMN.CUSTOMER_ID] = customer.id || '';
+    row[BOOKING_RECORD_COLUMN.CUSTOMER_NAME] = customer.name || row[BOOKING_RECORD_COLUMN.CUSTOMER_NAME];
+    row[BOOKING_RECORD_COLUMN.PHONE] = customer.phone || row[BOOKING_RECORD_COLUMN.PHONE];
+    row[BOOKING_RECORD_COLUMN.LINE_ID] = customer.lineId || row[BOOKING_RECORD_COLUMN.LINE_ID];
+    row[BOOKING_RECORD_COLUMN.CUSTOMER_SOURCE] = customer.source || '';
+  }
+
+  const course = courses[normalizeBookingLookupKey_(serviceItem)];
+  if (course) {
+    row[BOOKING_RECORD_COLUMN.COURSE_TYPE] = course.courseType || '';
+    row[BOOKING_RECORD_COLUMN.SHOULD_DEDUCT_CLASS] = course.shouldDeductClass || '';
+  }
+
+  return { ss: ss, row: row };
+}
+
+function appendBookingRecordRow_(d, status) {
+  const payload = buildBookingRecordRow_(d, status);
+  const sheet = getBookingRecordSheet_(payload.ss);
+  sheet.appendRow(payload.row);
+}
 
 /**
  * [前端呼叫] 將任務加入佇列 (維持不變)
@@ -82,33 +353,9 @@ function processTaskQueue() {
 }
 
 function doProcessCreateLogAndNotify(d) {
-  // 1. 取得試算表，若不存在則建立（防呆）
-  const ss = SpreadsheetApp.openById(SHEET_ID);
-  let sheet = ss.getSheetByName(APPOINTMENT_LOG);
-  if (!sheet) {
-    sheet = ss.insertSheet(APPOINTMENT_LOG);
-    // 可選：初始化標題列
-    sheet.appendRow(["紀錄時間", "Line ID", "客戶姓名", "電話", "預約日期時間", "課程名稱", "方案內容", "課程扣抵", "單次預約", "加時卷", "時長", "狀態"]);
-  }
+  appendBookingRecordRow_(d, '預約成功');
 
-  // 2. 📝 精準對齊 12 欄位 (A 到 L)
-  // 請確保傳入的 d 物件包含：courseDeduction, singleCount, ticketVal, serviceDuration
-  sheet.appendRow([
-    new Date(),               // A: 紀錄時間
-    d.lineUserId,             // B: Line ID
-    d.name,                   // C: 客戶姓名
-    "'" + d.phone,            // D: 電話 (防變形)
-    d.dateTime,               // E: 預約日期時間
-    d.courseName,             // F: 課程名稱
-    d.planContent,            // G: 方案內容
-    d.courseDeduction,
-    d.singleCount,               // H: 方案類型 (COURSE/SINGLE)
-    d.ticketVal || 0,         // J: 加時卷 (1 或 0)
-    d.serviceDuration,        // K: 時長 (純數字)
-    "預約成功"                 // L: 狀態
-  ]);
-
-  // 3. --- LINE 通知發送 ---
+  // --- LINE 通知發送 ---
   const requests = [];
   // 管理員通知
   requests.push({
@@ -141,25 +388,7 @@ function doProcessCreateLogAndNotify(d) {
 }
 
 function doProcessCancelLogAndNotify(d) {
-  const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(APPOINTMENT_LOG);
-  
-  if (sheet) {
-    // 📝 試算表欄位對齊：A 到 K 欄
-    sheet.appendRow([
-      new Date(),           // A: 紀錄執行時間
-      d.lineUserId,         // B: LINE ID
-      d.name,               // C: 姓名
-      "'" + d.phone,        // D: 電話 (防變形)
-      d.dateTimeStr,        // E: 預約時間
-      d.realCourseName,     // F: 課程名稱
-      d.customPlanName,     // G: 方案內容
-      d.plan === 'COURSE' ? 1 : 0,               // H: 方案類型 (COURSE/SINGLE)
-      d.plan === 'SINGLE' ? 1 : 0,               // H: 方案類型 (COURSE/SINGLE)
-      d.useTicket ? "1" : "0", // I: 加時卷
-      d.duration + "分",    // J: 分鐘數
-      "已取消"              // K: 狀態
-    ]);
-  }
+  appendBookingRecordRow_(d, '已取消');
 
   // --- LINE 訊息發送 ---
   const requests = [];

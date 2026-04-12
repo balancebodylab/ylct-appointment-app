@@ -56,6 +56,7 @@ function createBooking(date, time, duration, name, phone, lineUserId, plan, useT
 
   // 🛠️ 準備 12 欄位 Log 資料
   const notifyTaskData = {
+    eventId: tempId,
     lineUserId: lineUserId, 
     name: name, 
     phone: phone, 
