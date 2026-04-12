@@ -101,6 +101,28 @@ function normalizeBookingDateTime_(value) {
   };
 }
 
+function formatBookingDateKey_(value) {
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+
+  const text = String(value == null ? '' : value).trim();
+  const match = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  return match
+    ? match[1] + '-' + String(match[2]).padStart(2, '0') + '-' + String(match[3]).padStart(2, '0')
+    : text;
+}
+
+function formatBookingTimeKey_(value) {
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'HH:mm');
+  }
+
+  const text = String(value == null ? '' : value).trim();
+  const match = text.match(/(\d{1,2}):(\d{2})/);
+  return match ? String(match[1]).padStart(2, '0') + ':' + match[2] : text;
+}
+
 function normalizeBookingStatusForRecord_(value) {
   const status = String(value == null ? '' : value).trim();
   if (!status) return '';
@@ -201,7 +223,7 @@ function resolveBookingServiceItemForRecord_(courseName, planContent, courses) {
     const course = courses[keys[i]];
     if (course && course.name) return course.name;
   }
-  return courseName || planContent || '';
+  return '';
 }
 
 function getBookingRecordSheet_(ss) {
@@ -263,10 +285,69 @@ function buildBookingRecordRow_(d, status) {
   return { ss: ss, row: row };
 }
 
-function appendBookingRecordRow_(d, status) {
+function findExistingBookingRecordRow_(sheet, bookingRow) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+
+  const targetPhone = normalizeBookingLookupKey_(bookingRow[BOOKING_RECORD_COLUMN.PHONE]);
+  const targetLineId = normalizeBookingLookupKey_(bookingRow[BOOKING_RECORD_COLUMN.LINE_ID]);
+  const targetDate = formatBookingDateKey_(bookingRow[BOOKING_RECORD_COLUMN.BOOKING_DATE]);
+  const targetTime = formatBookingTimeKey_(bookingRow[BOOKING_RECORD_COLUMN.START_TIME]);
+  if (!targetDate || !targetTime || (!targetPhone && !targetLineId)) return 0;
+
+  const rowCount = lastRow - 1;
+  const firstColumn = BOOKING_RECORD_COLUMN.PHONE + 1;
+  const columnCount = BOOKING_RECORD_COLUMN.BOOKING_STATUS - BOOKING_RECORD_COLUMN.PHONE + 1;
+  const values = sheet.getRange(2, firstColumn, rowCount, columnCount).getValues();
+  const displays = sheet.getRange(2, firstColumn, rowCount, columnCount).getDisplayValues();
+  const phoneIndex = BOOKING_RECORD_COLUMN.PHONE - BOOKING_RECORD_COLUMN.PHONE;
+  const lineIdIndex = BOOKING_RECORD_COLUMN.LINE_ID - BOOKING_RECORD_COLUMN.PHONE;
+  const dateIndex = BOOKING_RECORD_COLUMN.BOOKING_DATE - BOOKING_RECORD_COLUMN.PHONE;
+  const timeIndex = BOOKING_RECORD_COLUMN.START_TIME - BOOKING_RECORD_COLUMN.PHONE;
+  const statusIndex = BOOKING_RECORD_COLUMN.BOOKING_STATUS - BOOKING_RECORD_COLUMN.PHONE;
+
+  for (let i = values.length - 1; i >= 0; i--) {
+    const row = values[i];
+    const displayRow = displays[i];
+    const rowStatus = String(row[statusIndex] || '').trim();
+    if (rowStatus === '已取消') continue;
+
+    const rowPhone = normalizeBookingLookupKey_(row[phoneIndex]);
+    const rowLineId = normalizeBookingLookupKey_(row[lineIdIndex]);
+    const sameCustomer =
+      (targetPhone && rowPhone === targetPhone) ||
+      (targetLineId && rowLineId === targetLineId);
+    if (!sameCustomer) continue;
+
+    const rowDate = formatBookingDateKey_(row[dateIndex] || displayRow[dateIndex]);
+    const rowTime = formatBookingTimeKey_(displayRow[timeIndex] || row[timeIndex]);
+    if (rowDate === targetDate && rowTime === targetTime) return i + 2;
+  }
+
+  return 0;
+}
+
+function writeBookingCancellationResult_(sheet, rowNumber) {
+  sheet.getRange(rowNumber, BOOKING_RECORD_COLUMN.BOOKING_STATUS + 1).setValue('已取消');
+  sheet.getRange(rowNumber, BOOKING_RECORD_COLUMN.UPDATED_AT + 1).setValue(new Date());
+  sheet.getRange(rowNumber, BOOKING_RECORD_COLUMN.SYNC_STATUS + 1).setValue('已取消');
+  sheet.getRange(rowNumber, BOOKING_RECORD_COLUMN.SYNC_MESSAGE + 1).setValue('LIFF 取消預約');
+}
+
+function writeBookingRecordRow_(d, status) {
   const payload = buildBookingRecordRow_(d, status);
   const sheet = getBookingRecordSheet_(payload.ss);
+
+  if (normalizeBookingStatusForRecord_(status) === '已取消') {
+    const existingRow = findExistingBookingRecordRow_(sheet, payload.row);
+    if (existingRow) {
+      writeBookingCancellationResult_(sheet, existingRow);
+      return existingRow;
+    }
+  }
+
   sheet.appendRow(payload.row);
+  return sheet.getLastRow();
 }
 
 /**
@@ -349,7 +430,7 @@ function processTaskQueue() {
 }
 
 function doProcessCreateLogAndNotify(d) {
-  appendBookingRecordRow_(d, '預約成功');
+  writeBookingRecordRow_(d, '預約成功');
 
   // --- LINE 通知發送 ---
   const requests = [];
@@ -384,7 +465,7 @@ function doProcessCreateLogAndNotify(d) {
 }
 
 function doProcessCancelLogAndNotify(d) {
-  appendBookingRecordRow_(d, '已取消');
+  writeBookingRecordRow_(d, '已取消');
 
   // --- LINE 訊息發送 ---
   const requests = [];

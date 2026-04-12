@@ -1,7 +1,7 @@
 // ==========================================
 // 📅 預約交易邏輯 (BookingLogic v8.2 Final Stable)
 // 更新日期：2026-03-21
-// 更新重點：強化大禮包解析、對齊 12 欄位 Log、TempID 智慧映射
+// 更新重點：強化大禮包解析、對齊預約紀錄 Sheet、TempID 智慧映射
 // ==========================================
 
 // ==========================================
@@ -54,7 +54,7 @@ function createBooking(date, time, duration, name, phone, lineUserId, plan, useT
   };
   addTaskToQueue('processCreateEvent', eventTaskData);
 
-  // 🛠️ 準備 12 欄位 Log 資料
+  // 🛠️ 準備預約紀錄 Sheet 資料
   const notifyTaskData = {
     lineUserId: lineUserId, 
     name: name, 
