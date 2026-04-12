@@ -377,7 +377,233 @@ function writeBookingCancellationResult_(sheet, rowNumber) {
   sheet.getRange(rowNumber, BOOKING_RECORD_COLUMN.BOOKING_STATUS + 1).setValue('已取消');
   sheet.getRange(rowNumber, BOOKING_RECORD_COLUMN.UPDATED_AT + 1).setValue(new Date());
   sheet.getRange(rowNumber, BOOKING_RECORD_COLUMN.SYNC_STATUS + 1).setValue('待同步');
-  sheet.getRange(rowNumber, BOOKING_RECORD_COLUMN.SYNC_MESSAGE + 1).setValue('LIFF 取消預約，等待 Sheet Calendar 同步');
+  sheet.getRange(rowNumber, BOOKING_RECORD_COLUMN.SYNC_MESSAGE + 1).setValue('LIFF 取消預約，準備立即同步 Google Calendar');
+}
+
+function getBookingSyncTimestampForRecord_() {
+  return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm:ss');
+}
+
+function writeBookingSyncResultForRecord_(sheet, rowNumber, result) {
+  sheet.getRange(rowNumber, BOOKING_RECORD_COLUMN.CALENDAR_EVENT_ID + 1, 1, 4).setValues([[
+    result.calendarEventId || '',
+    result.syncStatus || '',
+    result.lastSyncedAt || getBookingSyncTimestampForRecord_(),
+    result.syncMessage || ''
+  ]]);
+}
+
+function combineBookingDateTimeForRecord_(dateValue, timeValue) {
+  let year, month, day;
+  if (dateValue instanceof Date && !isNaN(dateValue.getTime())) {
+    year = dateValue.getFullYear();
+    month = dateValue.getMonth();
+    day = dateValue.getDate();
+  } else {
+    const dateText = String(dateValue == null ? '' : dateValue).trim();
+    const dateMatch = dateText.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (!dateMatch) return null;
+    year = Number(dateMatch[1]);
+    month = Number(dateMatch[2]) - 1;
+    day = Number(dateMatch[3]);
+  }
+
+  let hours, minutes;
+  if (timeValue instanceof Date && !isNaN(timeValue.getTime())) {
+    hours = timeValue.getHours();
+    minutes = timeValue.getMinutes();
+  } else if (typeof timeValue === 'number') {
+    const totalMinutes = Math.round(timeValue * 24 * 60);
+    hours = Math.floor(totalMinutes / 60) % 24;
+    minutes = totalMinutes % 60;
+  } else {
+    const timeText = String(timeValue == null ? '' : timeValue).trim();
+    const timeMatch = timeText.match(/(\d{1,2}):(\d{2})/);
+    if (!timeMatch) return null;
+    hours = Number(timeMatch[1]);
+    minutes = Number(timeMatch[2]);
+  }
+
+  return new Date(year, month, day, hours, minutes, 0);
+}
+
+function buildBookingCalendarDescriptionForRecord_(booking) {
+  return [
+    `預約編號：${booking.bookingId || ''}`,
+    `客戶編號：${booking.customerId || ''}`,
+    `客戶姓名：${booking.customerName || ''}`,
+    `電話：${booking.phone || ''}`,
+    `Line ID：${booking.lineId || ''}`,
+    `服務項目：${booking.serviceItem || ''}`,
+    `教練名稱：${booking.coachName || ''}`,
+    `預約狀態：${booking.bookingStatus || ''}`,
+    `付款狀態：${booking.paymentStatus || ''}`,
+    `扣抵類型：${booking.offsetType || ''}`,
+    `課程類型：${booking.courseType || ''}`,
+    `是否需扣堂：${booking.shouldDeductClass || ''}`,
+    `客戶來源：${booking.customerSource || ''}`,
+    `備註：${booking.note || ''}`
+  ].join('\n');
+}
+
+function buildBookingCalendarTitleForRecord_(booking) {
+  const duration = parseBookingNumber_(booking.durationMinutes);
+  const durationText = duration ? ` (${duration}分)` : '';
+  const customerText = booking.customerName || booking.customerId || '';
+  const serviceText = booking.serviceItem || '未設定服務項目';
+  return `[預約] ${customerText} - ${serviceText}${durationText}`;
+}
+
+function findCalendarEventForRecord_(eventId) {
+  if (!eventId || !CALENDAR_ID) return null;
+  try {
+    const calendar = CalendarApp.getCalendarById(CALENDAR_ID);
+    return calendar ? calendar.getEventById(eventId) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function checkCalendarConflictForRecord_(calendar, startAt, endAt, excludeEventId) {
+  const normalizedExcludeId = String(excludeEventId || '').trim();
+  const events = calendar.getEvents(startAt, endAt);
+  return events.find(event => {
+    const eventId = String(event.getId() || '').trim();
+    if (normalizedExcludeId && eventId === normalizedExcludeId) return false;
+    return event.getStartTime() < endAt && event.getEndTime() > startAt;
+  }) || null;
+}
+
+function syncBookingCalendarRow_(sheet, rowNumber, ss) {
+  const row = sheet.getRange(rowNumber, 1, 1, BOOKING_RECORD_TOTAL_COLUMNS).getValues()[0];
+  const displayRow = sheet.getRange(rowNumber, 1, 1, BOOKING_RECORD_TOTAL_COLUMNS).getDisplayValues()[0];
+  if (displayRow[BOOKING_RECORD_COLUMN.START_TIME]) {
+    row[BOOKING_RECORD_COLUMN.START_TIME] = displayRow[BOOKING_RECORD_COLUMN.START_TIME];
+  }
+
+  const booking = {
+    bookingId: row[BOOKING_RECORD_COLUMN.BOOKING_ID],
+    customerId: row[BOOKING_RECORD_COLUMN.CUSTOMER_ID],
+    customerName: row[BOOKING_RECORD_COLUMN.CUSTOMER_NAME],
+    phone: row[BOOKING_RECORD_COLUMN.PHONE],
+    lineId: row[BOOKING_RECORD_COLUMN.LINE_ID],
+    bookingDate: row[BOOKING_RECORD_COLUMN.BOOKING_DATE],
+    startTime: row[BOOKING_RECORD_COLUMN.START_TIME],
+    courseDeduction: row[BOOKING_RECORD_COLUMN.COURSE_DEDUCTION],
+    singleBooking: row[BOOKING_RECORD_COLUMN.SINGLE_BOOKING],
+    extraTicket: row[BOOKING_RECORD_COLUMN.EXTRA_TICKET],
+    durationMinutes: row[BOOKING_RECORD_COLUMN.DURATION_MINUTES],
+    serviceItem: row[BOOKING_RECORD_COLUMN.SERVICE_ITEM],
+    coachName: row[BOOKING_RECORD_COLUMN.COACH_NAME],
+    bookingStatus: String(row[BOOKING_RECORD_COLUMN.BOOKING_STATUS] || '').trim(),
+    paymentStatus: row[BOOKING_RECORD_COLUMN.PAYMENT_STATUS],
+    offsetType: row[BOOKING_RECORD_COLUMN.OFFSET_TYPE],
+    courseType: row[BOOKING_RECORD_COLUMN.COURSE_TYPE],
+    shouldDeductClass: row[BOOKING_RECORD_COLUMN.SHOULD_DEDUCT_CLASS],
+    customerSource: row[BOOKING_RECORD_COLUMN.CUSTOMER_SOURCE],
+    note: row[BOOKING_RECORD_COLUMN.NOTE],
+    calendarEventId: row[BOOKING_RECORD_COLUMN.CALENDAR_EVENT_ID]
+  };
+
+  if (!CALENDAR_ID) {
+    writeBookingSyncResultForRecord_(sheet, rowNumber, {
+      calendarEventId: booking.calendarEventId,
+      syncStatus: '設定缺失',
+      syncMessage: '缺少 CALENDAR_ID，無法立即同步 Google Calendar'
+    });
+    return;
+  }
+
+  const calendar = CalendarApp.getCalendarById(CALENDAR_ID);
+  if (!calendar) {
+    writeBookingSyncResultForRecord_(sheet, rowNumber, {
+      calendarEventId: booking.calendarEventId,
+      syncStatus: '設定缺失',
+      syncMessage: '找不到 CALENDAR_ID 對應的 Google Calendar'
+    });
+    return;
+  }
+
+  if (booking.bookingStatus === '已取消') {
+    try {
+      const event = findCalendarEventForRecord_(booking.calendarEventId);
+      if (event) event.deleteEvent();
+      writeBookingSyncResultForRecord_(sheet, rowNumber, {
+        calendarEventId: '',
+        syncStatus: '已取消',
+        syncMessage: event ? '已立即取消 Google Calendar 預約' : '已標記取消；找不到既有 Calendar 預約'
+      });
+    } catch (error) {
+      writeBookingSyncResultForRecord_(sheet, rowNumber, {
+        calendarEventId: booking.calendarEventId,
+        syncStatus: '同步失敗',
+        syncMessage: error && error.message ? error.message : 'Google Calendar 取消失敗'
+      });
+    }
+    return;
+  }
+
+  const activeStatuses = ['已預約', '已確認', '已完成'];
+  if (activeStatuses.indexOf(booking.bookingStatus) === -1) {
+    writeBookingSyncResultForRecord_(sheet, rowNumber, {
+      calendarEventId: booking.calendarEventId,
+      syncStatus: '略過',
+      syncMessage: '預約狀態未達同步條件'
+    });
+    return;
+  }
+
+  const startAt = combineBookingDateTimeForRecord_(booking.bookingDate, booking.startTime);
+  const duration = parseBookingNumber_(booking.durationMinutes);
+  const endAt = startAt && duration > 0 ? new Date(startAt.getTime() + duration * 60 * 1000) : null;
+  const missingFields = [];
+  if (!booking.customerName && !booking.customerId) missingFields.push('客戶姓名');
+  if (!booking.serviceItem) missingFields.push('服務項目');
+  if (!startAt) missingFields.push('預約日期/開始時間');
+  if (!endAt) missingFields.push('時長');
+  if (missingFields.length > 0) {
+    writeBookingSyncResultForRecord_(sheet, rowNumber, {
+      calendarEventId: booking.calendarEventId,
+      syncStatus: '資料不足',
+      syncMessage: `缺少欄位：${missingFields.join('、')}`
+    });
+    return;
+  }
+
+  try {
+    const conflict = checkCalendarConflictForRecord_(calendar, startAt, endAt, booking.calendarEventId);
+    if (conflict) {
+      writeBookingSyncResultForRecord_(sheet, rowNumber, {
+        calendarEventId: booking.calendarEventId,
+        syncStatus: '時段衝突',
+        syncMessage: `時段衝突：${conflict.getTitle() || '既有預約'}`
+      });
+      return;
+    }
+
+    const title = buildBookingCalendarTitleForRecord_(booking);
+    const description = buildBookingCalendarDescriptionForRecord_(booking);
+    let event = findCalendarEventForRecord_(booking.calendarEventId);
+    if (event) {
+      event.setTitle(title);
+      event.setDescription(description);
+      event.setTime(startAt, endAt);
+    } else {
+      event = calendar.createEvent(title, startAt, endAt, { description });
+    }
+
+    writeBookingSyncResultForRecord_(sheet, rowNumber, {
+      calendarEventId: event.getId(),
+      syncStatus: '已同步',
+      syncMessage: 'Google Calendar 已立即同步成功'
+    });
+  } catch (error) {
+    writeBookingSyncResultForRecord_(sheet, rowNumber, {
+      calendarEventId: booking.calendarEventId,
+      syncStatus: '同步失敗',
+      syncMessage: error && error.message ? error.message : 'Google Calendar 同步失敗'
+    });
+  }
 }
 
 function syncBookingRecordWithSheetWorkflow_(ss, sheet, rowNumber) {
@@ -502,7 +728,7 @@ function processTaskQueue() {
 }
 
 function doProcessCreateLogAndNotify(d) {
-  writeBookingRecordRow_(d, '預約成功');
+  if (!d.bookingRecordWritten) writeBookingRecordRow_(d, '預約成功');
 
   // --- LINE 通知發送 ---
   const requests = [];
@@ -538,7 +764,7 @@ function doProcessCreateLogAndNotify(d) {
 
 function doProcessCancelLogAndNotify(d) {
   ensureCancelNotificationMessages_(d);
-  writeBookingRecordRow_(d, '已取消');
+  if (!d.bookingRecordWritten) writeBookingRecordRow_(d, '已取消');
 
   // --- LINE 訊息發送 ---
   const requests = [];

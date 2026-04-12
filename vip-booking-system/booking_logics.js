@@ -62,6 +62,8 @@ function createBooking(date, time, duration, name, phone, lineUserId, plan, useT
     adminMsg: `🎉 預約成功通知\n\n🔹 姓名｜ ${name}\n🔹 聯絡電話｜ ${phone}\n🔹 課程方案｜ ${serviceDuration}分鐘 （${planContent}）\n🔹 確認時間｜ ${date} ${weekday} ${time}`,
     userMsg: `您好 ${name}，您的預約已成功！\n\n📅 詳情：\n🔹 姓名｜ ${name}\n🔹 課程｜ ${serviceDuration}分鐘（${planContent}）\n🔹 時間｜ ${date} ${weekday} ${time}\n\n期待您的光臨！`
   };
+  notifyTaskData.bookingRecordRow = writeBookingRecordRow_(notifyTaskData, '預約成功');
+  notifyTaskData.bookingRecordWritten = true;
   addTaskToQueue('processCreateLogAndNotify', notifyTaskData);
 
   console.log(`🏁 [createBooking] 處理完成，耗時: ${new Date().getTime() - tStart} ms`);
@@ -76,7 +78,10 @@ function cancelBooking(data) {
     // 1. 【樂觀刪除快取】
     removeEventFromCache(data.eventId, data.dateTimeStr, data.phone);
 
-    // 2. 【分派任務】只更新預約紀錄；Calendar 交由 Sheet 同步邏輯處理
+    // 2. 立即更新預約紀錄與 Google Calendar，再把通知交給背景任務
+    ensureCancelNotificationMessages_(data);
+    data.bookingRecordRow = writeBookingRecordRow_(data, '已取消');
+    data.bookingRecordWritten = true;
     addTaskToQueue('processCancelLogAndNotify', data);
 
     return { success: true };
