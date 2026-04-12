@@ -540,6 +540,7 @@ liff.init({ liffId: MY_LIFF_ID }).then(() => {
 
     // 💎 課程名稱：從會員資料抓 (例如: 2025 新年優惠 50 分鐘)
       const myCourseName = currentUser.planName || "一般預約課程"; 
+      const bookingCourseName = selectedPlan === 'SINGLE' ? getSingleBookingCourseName() : myCourseName;
 
       const reqData = {
         date: dateStr, 
@@ -551,7 +552,7 @@ liff.init({ liffId: MY_LIFF_ID }).then(() => {
         plan: selectedPlan, 
         useTicket: useTicket,
         customPlanName: finalPlanDetailName || selectedPlan, // 👈 對應 GAS 的 customPlanName
-        realCourseName: myCourseName  // 👈 對應 GAS 的 realCourseName
+        realCourseName: bookingCourseName  // 👈 對應 GAS 的 realCourseName
       };
     Swal.fire({
       title: '確認預約資訊',
@@ -736,6 +737,13 @@ liff.init({ liffId: MY_LIFF_ID }).then(() => {
     
     useTicket = isTicket; finalPlanDetailName = planText + (isTicket ? " + 結構調整抵用卷" : "");
     setDuration(serviceTime + ticketTime + bufferTime, serviceTime + ticketTime);
+  }
+
+  function getSingleBookingCourseName() {
+    const select = document.getElementById('singlePlanSelect');
+    const val = select ? select.value : '50_1';
+    if (val === '80_1') return '功能性運動按摩 80 分鐘';
+    return '超人氣運動按摩 50 分鐘';
   }
 
   function setDuration(occupied, display) {

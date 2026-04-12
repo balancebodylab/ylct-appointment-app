@@ -81,6 +81,16 @@ function normalizeBookingLookupKey_(value) {
     .replace(/\s+/g, '');
 }
 
+function normalizeBookingPhoneForSheet_(value) {
+  const text = String(value == null ? '' : value).trim().replace(/^'/, '');
+  if (!text) return '';
+
+  const digits = text.replace(/\D/g, '');
+  if (digits.length === 9 && digits.charAt(0) === '9') return '0' + digits;
+  if (digits.length === 10 && digits.indexOf('09') === 0) return digits;
+  return text;
+}
+
 function normalizeBookingDateTime_(value) {
   if (value instanceof Date && !isNaN(value.getTime())) {
     return {
@@ -156,7 +166,7 @@ function getBookingCustomerDirectory_(ss) {
     customers[String(id)] = {
       id: id,
       name: row[1] || '',
-      phone: row[2] == null ? '' : String(row[2]).replace(/^'/, '').trim(),
+      phone: normalizeBookingPhoneForSheet_(row[2]),
       lineId: row[3] == null ? '' : String(row[3]).trim(),
       source: row[6] == null ? '' : String(row[6]).trim()
     };
@@ -193,6 +203,7 @@ function getBookingCourseDirectory_(ss) {
       code: row[0] || '',
       name: row[1] || '',
       officialCourseName: row[2] || row[1] || '',
+      durationMinutes: parseBookingNumber_(row[3]),
       courseType: row[5] || '',
       shouldDeductClass: row[6] || '',
       mappedCourseName: row[12] || '',
@@ -226,12 +237,45 @@ function resolveBookingServiceItemForRecord_(courseName, planContent, courses) {
   return '';
 }
 
+function findSingleBookingServiceItemForRecord_(durationMinutes, courses) {
+  const duration = parseBookingNumber_(durationMinutes);
+  const baseDuration = duration >= 100 ? 50 : duration;
+  const seen = {};
+
+  for (let key in courses) {
+    const course = courses[key];
+    if (!course || !course.name || seen[course.name]) continue;
+    seen[course.name] = true;
+
+    const courseType = String(course.courseType || '').trim();
+    const courseDuration = parseBookingNumber_(course.durationMinutes);
+    if (course.isActive === '是' && courseType.indexOf('單次') !== -1 && courseDuration === baseDuration) {
+      return course.name;
+    }
+  }
+
+  return '';
+}
+
+function resolveBookingServiceItemForRecordData_(d, courseName, planContent, courses) {
+  const serviceItem = resolveBookingServiceItemForRecord_(courseName, planContent, courses);
+  if (serviceItem) return serviceItem;
+  if (d && d.plan === 'SINGLE') {
+    return findSingleBookingServiceItemForRecord_(
+      d.serviceDuration != null ? d.serviceDuration : d.duration,
+      courses
+    );
+  }
+  return '';
+}
+
 function getBookingRecordSheet_(ss) {
   let sheet = ss.getSheetByName(BOOKING_RECORD_SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(BOOKING_RECORD_SHEET_NAME);
     sheet.appendRow(BOOKING_RECORD_HEADERS);
   }
+  sheet.getRange('D:D').setNumberFormat('@');
   return sheet;
 }
 
@@ -246,11 +290,11 @@ function buildBookingRecordRow_(d, status) {
   const durationMinutes = parseBookingNumber_(d.serviceDuration != null ? d.serviceDuration : d.duration);
   const planContent = d.planContent || d.customPlanName || '';
   const courseName = d.courseName || d.realCourseName || '';
-  const serviceItem = resolveBookingServiceItemForRecord_(courseName, planContent, courses);
+  const serviceItem = resolveBookingServiceItemForRecordData_(d, courseName, planContent, courses);
   const row = new Array(BOOKING_RECORD_TOTAL_COLUMNS).fill('');
 
   row[BOOKING_RECORD_COLUMN.CUSTOMER_NAME] = d.name || '';
-  row[BOOKING_RECORD_COLUMN.PHONE] = d.phone == null ? '' : String(d.phone).replace(/^'/, '').trim();
+  row[BOOKING_RECORD_COLUMN.PHONE] = normalizeBookingPhoneForSheet_(d.phone);
   row[BOOKING_RECORD_COLUMN.LINE_ID] = d.lineUserId || '';
   row[BOOKING_RECORD_COLUMN.BOOKING_DATE] = bookingDateTime.date;
   row[BOOKING_RECORD_COLUMN.START_TIME] = bookingDateTime.time;
@@ -367,6 +411,9 @@ function writeBookingRecordRow_(d, status) {
 
   sheet.appendRow(payload.row);
   const rowNumber = sheet.getLastRow();
+  sheet.getRange(rowNumber, BOOKING_RECORD_COLUMN.PHONE + 1)
+    .setNumberFormat('@')
+    .setValue(payload.row[BOOKING_RECORD_COLUMN.PHONE]);
   syncBookingRecordWithSheetWorkflow_(payload.ss, sheet, rowNumber);
   return rowNumber;
 }

@@ -21,6 +21,9 @@ function createBooking(date, time, duration, name, phone, lineUserId, plan, useT
   const durationInt = parseInt(duration);
   // 核心邏輯：計算實際服務時間（扣除轉場時間）
   const serviceDuration = durationInt - (plan === 'COURSE' && planContent.includes('2堂') ? 20 : 10);
+  if (plan === 'SINGLE') {
+    courseName = planContent.indexOf('80') !== -1 ? '功能性運動按摩 80 分鐘' : '超人氣運動按摩 50 分鐘';
+  }
   const ticketVal = useTicket ? 1 : 0;
   const weekday = getDayOfWeekCN(date);
 
