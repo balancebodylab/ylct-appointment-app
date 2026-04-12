@@ -1,7 +1,7 @@
 // ==========================================
 // 📅 預約交易邏輯 (BookingLogic v8.2 Final Stable)
 // 更新日期：2026-03-21
-// 更新重點：強化大禮包解析、對齊預約紀錄 Sheet、TempID 智慧映射
+// 更新重點：強化大禮包解析、對齊預約紀錄 Sheet、Calendar 交由 Sheet 同步
 // ==========================================
 
 // ==========================================
@@ -44,19 +44,8 @@ function createBooking(date, time, duration, name, phone, lineUserId, plan, useT
   // --- 2. 樂觀更新快取 (前端秒看預約成功) ---
   addEventToCache(start, end, title, descriptionContent, tempId);
 
-  // --- 3. 派發非同步任務 (由 triggerQueueNow 喚醒) ---
-  const eventTaskData = {
-    eventId: tempId,
-    title: title,
-    start: start.toISOString(),
-    end: end.toISOString(),
-    description: descriptionContent
-  };
-  addTaskToQueue('processCreateEvent', eventTaskData);
-
   // 🛠️ 準備預約紀錄 Sheet 資料
   const notifyTaskData = {
-    eventId: tempId,
     lineUserId: lineUserId, 
     name: name, 
     phone: phone, 
@@ -77,25 +66,6 @@ function createBooking(date, time, duration, name, phone, lineUserId, plan, useT
 }
 
 // ==========================================
-// ⚙️ 背景執行：日曆寫入與 ID 映射
-// ==========================================
-function processCreateEvent(data) {
-  try {
-    const calendar = CalendarApp.getCalendarById(CALENDAR_ID);
-    const event = calendar.createEvent(data.title, new Date(data.start), new Date(data.end), { description: data.description });
-    const realId = event.getId();
-
-    // 🔗 重要：記錄對照表，讓「秒約秒刪」不會找不到 ID
-    if (data.eventId && data.eventId.startsWith('temp_')) {
-      CacheService.getScriptCache().put('MAP_' + data.eventId, realId, 21600);
-    }
-    if (typeof refreshCalendarCache === 'function') refreshCalendarCache();
-  } catch(e) {
-    console.error(`❌ [背景] 建立事件失敗: ${e.toString()}`);
-  }
-}
-
-// ==========================================
 // ➖ 取消預約 (參數完整封裝版)
 // ==========================================
 function cancelBooking(data) {
@@ -103,59 +73,13 @@ function cancelBooking(data) {
     // 1. 【樂觀刪除快取】
     removeEventFromCache(data.eventId, data.dateTimeStr, data.phone);
 
-    // 2. 【分派任務】
-    addTaskToQueue('processCancelTask', data);
+    // 2. 【分派任務】只更新預約紀錄；Calendar 交由 Sheet 同步邏輯處理
+    addTaskToQueue('processCancelLogAndNotify', data);
 
     return { success: true };
   } catch (e) {
     console.error("取消失敗: ", e);
     return { success: false, error: e.toString() };
-  }
-}
-
-// ==========================================
-// ⚙️ 背景執行：取消處理 (含搜捕模式)
-// ==========================================
-function processCancelTask(data) {
-  let { eventId, dateTimeStr, phone, name, lineUserId, realCourseName, customPlanName } = data;
-  
-  try {
-    const calendar = CalendarApp.getCalendarById(CALENDAR_ID);
-    let event = null;
-    
-    // 1. 💡 查閱對照表
-    if (eventId && eventId.toString().startsWith('temp_')) {
-      const mappedRealId = CacheService.getScriptCache().get('MAP_' + eventId);
-      if (mappedRealId) eventId = mappedRealId; 
-    }
-    
-    // 2. 獲取日曆事件
-    if (eventId && !eventId.toString().startsWith('temp_')) {
-      try { event = calendar.getEventById(eventId); } catch(e) {}
-    }
-    
-    // 3. 🚨 搜捕模式 (ID 失效時的最後防線)
-    if (!event && dateTimeStr) {
-      const targetStart = new Date(dateTimeStr.replace(/-/g, '/').replace('T', ' ') + ':00');
-      const targetEnd = new Date(targetStart.getTime() + 15 * 60000); 
-      const events = calendar.getEvents(targetStart, targetEnd);
-      event = events.find(e => (e.getDescription() || '').includes(phone));
-    }
-    
-    // 4. 刪除與通知
-    if (event && (event.getDescription() || '').includes(phone)) {
-      event.deleteEvent();
-    }
-
-    // 組合通知訊息
-    data.adminMsg = `❌ 【取消通知】\n🔹 姓名｜ ${name}\n🔹 課程｜ ${realCourseName}\n🔹 方案｜ ${customPlanName}\n🔹 時間｜ ${dateTimeStr}`;
-    data.userMsg = `您好 ${name}，您的預約已取消成功。\n📅 詳情：\n🔹 課程｜ ${realCourseName}\n🔹 時間｜ ${dateTimeStr}`;
-
-    if (typeof refreshCalendarCache === 'function') refreshCalendarCache();
-    if (typeof doProcessCancelLogAndNotify === 'function') doProcessCancelLogAndNotify(data); 
-
-  } catch (e) {
-    console.error("背景取消失敗: " + String(e));
   }
 }
 

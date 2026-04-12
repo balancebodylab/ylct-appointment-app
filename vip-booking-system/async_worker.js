@@ -123,13 +123,6 @@ function formatBookingTimeKey_(value) {
   return match ? String(match[1]).padStart(2, '0') + ':' + match[2] : text;
 }
 
-function getRealCalendarEventIdForRecord_(eventId) {
-  const id = String(eventId == null ? '' : eventId).trim();
-  if (!id) return '';
-  if (id.indexOf('temp_') !== 0) return id;
-  return CacheService.getScriptCache().get('MAP_' + id) || '';
-}
-
 function normalizeBookingStatusForRecord_(value) {
   const status = String(value == null ? '' : value).trim();
   if (!status) return '';
@@ -254,7 +247,6 @@ function buildBookingRecordRow_(d, status) {
   const planContent = d.planContent || d.customPlanName || '';
   const courseName = d.courseName || d.realCourseName || '';
   const serviceItem = resolveBookingServiceItemForRecord_(courseName, planContent, courses);
-  const calendarEventId = getRealCalendarEventIdForRecord_(d.eventId);
   const row = new Array(BOOKING_RECORD_TOTAL_COLUMNS).fill('');
 
   row[BOOKING_RECORD_COLUMN.CUSTOMER_NAME] = d.name || '';
@@ -273,10 +265,8 @@ function buildBookingRecordRow_(d, status) {
   row[BOOKING_RECORD_COLUMN.OFFSET_TYPE] = inferBookingOffsetTypeForRecord_(courseDeduction, singleBooking, extraTicket, planContent);
   row[BOOKING_RECORD_COLUMN.CREATED_AT] = new Date();
   row[BOOKING_RECORD_COLUMN.NOTE] = d.note || '';
-  row[BOOKING_RECORD_COLUMN.CALENDAR_EVENT_ID] = calendarEventId;
-  row[BOOKING_RECORD_COLUMN.SYNC_STATUS] = calendarEventId ? '已同步' : '';
-  row[BOOKING_RECORD_COLUMN.LAST_SYNCED_AT] = calendarEventId ? new Date() : '';
-  row[BOOKING_RECORD_COLUMN.SYNC_MESSAGE] = calendarEventId ? 'LIFF 已建立 Calendar 預約' : '';
+  row[BOOKING_RECORD_COLUMN.SYNC_STATUS] = '待同步';
+  row[BOOKING_RECORD_COLUMN.SYNC_MESSAGE] = 'LIFF 建立預約，等待 Sheet Calendar 同步';
   row[BOOKING_RECORD_COLUMN.SOURCE_CHANNEL] = 'LIFF';
 
   const customer = findBookingCustomerForRecord_(row, customers);
@@ -342,8 +332,24 @@ function findExistingBookingRecordRow_(sheet, bookingRow) {
 function writeBookingCancellationResult_(sheet, rowNumber) {
   sheet.getRange(rowNumber, BOOKING_RECORD_COLUMN.BOOKING_STATUS + 1).setValue('已取消');
   sheet.getRange(rowNumber, BOOKING_RECORD_COLUMN.UPDATED_AT + 1).setValue(new Date());
-  sheet.getRange(rowNumber, BOOKING_RECORD_COLUMN.SYNC_STATUS + 1).setValue('已取消');
-  sheet.getRange(rowNumber, BOOKING_RECORD_COLUMN.SYNC_MESSAGE + 1).setValue('LIFF 取消預約');
+  sheet.getRange(rowNumber, BOOKING_RECORD_COLUMN.SYNC_STATUS + 1).setValue('待同步');
+  sheet.getRange(rowNumber, BOOKING_RECORD_COLUMN.SYNC_MESSAGE + 1).setValue('LIFF 取消預約，等待 Sheet Calendar 同步');
+}
+
+function syncBookingRecordWithSheetWorkflow_(ss, sheet, rowNumber) {
+  if (typeof syncBookingRow_ === 'function') {
+    const customers = typeof getCustomerDirectory_ === 'function' ? getCustomerDirectory_(ss) : getBookingCustomerDirectory_(ss);
+    const courses = typeof getCourseSettingsDirectory_ === 'function' ? getCourseSettingsDirectory_(ss) : getBookingCourseDirectory_(ss);
+    syncBookingRow_(sheet, rowNumber, customers, courses);
+  }
+
+  if (typeof syncBookingCalendarRow_ === 'function') {
+    syncBookingCalendarRow_(sheet, rowNumber, ss);
+    if (typeof refreshCalendarCache === 'function') refreshCalendarCache();
+    return true;
+  }
+
+  return false;
 }
 
 function writeBookingRecordRow_(d, status) {
@@ -354,12 +360,25 @@ function writeBookingRecordRow_(d, status) {
     const existingRow = findExistingBookingRecordRow_(sheet, payload.row);
     if (existingRow) {
       writeBookingCancellationResult_(sheet, existingRow);
+      syncBookingRecordWithSheetWorkflow_(payload.ss, sheet, existingRow);
       return existingRow;
     }
   }
 
   sheet.appendRow(payload.row);
-  return sheet.getLastRow();
+  const rowNumber = sheet.getLastRow();
+  syncBookingRecordWithSheetWorkflow_(payload.ss, sheet, rowNumber);
+  return rowNumber;
+}
+
+function ensureCancelNotificationMessages_(d) {
+  if (!d.adminMsg) {
+    d.adminMsg = `❌ 【取消通知】\n🔹 姓名｜ ${d.name || ''}\n🔹 課程｜ ${d.realCourseName || ''}\n🔹 方案｜ ${d.customPlanName || ''}\n🔹 時間｜ ${d.dateTimeStr || ''}`;
+  }
+
+  if (!d.userMsg) {
+    d.userMsg = `您好 ${d.name || ''}，您的預約已取消成功。\n📅 詳情：\n🔹 課程｜ ${d.realCourseName || ''}\n🔹 時間｜ ${d.dateTimeStr || ''}`;
+  }
 }
 
 /**
@@ -426,12 +445,6 @@ function processTaskQueue() {
         } else if (task.func === 'processCancelLogAndNotify') {
           doProcessCancelLogAndNotify(task.data);
           console.log("✅ processCancelLogAndNotify");
-        } else if (task.func === 'processCancelTask') {
-          processCancelTask(task.data);
-          console.log("✅ processCancelTask");
-        } else if (task.func === 'processCreateEvent') {
-          processCreateEvent(task.data);
-          console.log("✅ processCreateEvent");
         }
       } catch (taskError) {
         console.error(`⚠️ 任務執行失敗 (${task.func}): ` + taskError.toString());
@@ -477,6 +490,7 @@ function doProcessCreateLogAndNotify(d) {
 }
 
 function doProcessCancelLogAndNotify(d) {
+  ensureCancelNotificationMessages_(d);
   writeBookingRecordRow_(d, '已取消');
 
   // --- LINE 訊息發送 ---
