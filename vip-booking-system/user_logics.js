@@ -170,7 +170,7 @@ function completeBinding(lineUserId, phone, rowIndex) {
     };
 
     // 寫入電話與 Line ID
-    sheet.getRange(rowIndex, colIdx.phone).setValue(phone);
+    sheet.getRange(rowIndex, colIdx.phone).setNumberFormat("@").setValue(String(phone || '').replace(/^'/, ''));
     sheet.getRange(rowIndex, colIdx.lineId).setValue(lineUserId);
 
     // 重新撈取該行完整資料回傳前端
@@ -188,6 +188,7 @@ function completeBinding(lineUserId, phone, rowIndex) {
 function registerNewUser(d) {
   const ss = SpreadsheetApp.openById(SHEET_ID);
   const sheet = ss.getSheetByName("客戶名單");
+  sheet.getRange("C:C").setNumberFormat("@");
   
   // 準備要寫入的資料
   // 假設欄位順序：[姓名, 電話, 方案內容, 剩餘堂數, 抵用卷, Line ID, 備註]
@@ -203,6 +204,7 @@ function registerNewUser(d) {
   ];
 
   sheet.appendRow(newRow);
+  sheet.getRange(sheet.getLastRow(), 3).setNumberFormat("@");
 
   // 註冊完直接回傳會員物件，讓前端不用再登入一次
   return { 
