@@ -197,7 +197,30 @@
     }
     .time-slot.selected { background: var(--primary); color: #fff; box-shadow: 0 4px 8px rgba(45, 90, 76, 0.3); }
 
-    input[type="date"] { display: block; width: 100%; padding: 12px; margin: 15px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; background: #fff; outline: none;}
+input[type="date"] {
+    display: block;
+    /* 1. 強制寬度與最大寬度 */
+    width: 100% !important;
+    max-width: 100% !important; 
+    box-sizing: border-box !important;
+
+    /* 2. 徹底歸零左右外距，防止推擠 */
+    margin: 15px 0 !important; 
+    
+    /* 3. 內距與樣式 */
+    padding: 12px 10px !important;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 16px;
+    background: #fff;
+    outline: none;
+    color: #333;
+
+    /* 4. 🚀 關鍵：移除 iOS/Android 預設樣式干擾 */
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 45px; /* 確保在手機上好點擊 */
+}
   </style>
 </head>
 <body>
@@ -745,7 +768,6 @@ liff.init({ liffId: MY_LIFF_ID }).then(() => {
     if (val === '80_1') return '功能性運動按摩 80 分鐘';
     return '超人氣運動按摩 50 分鐘';
   }
-
   function setDuration(occupied, display) {
     occupiedDuration = occupied; displayDuration = display;   
     const finalDurEl = document.getElementById('finalDuration'); if (finalDurEl) finalDurEl.innerText = display;
