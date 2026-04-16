@@ -66,7 +66,7 @@ function removeEventFromCache(eventId, dateTimeStr, phone) {
   }
 
   const cachedJson = cache.get(CACHE_KEY_CALENDAR);
-  if (!cachedJson) return;
+  if (!cachedJson) return false;
 
   let allEvents = JSON.parse(cachedJson);
   const initialLength = allEvents.length;
@@ -88,7 +88,11 @@ function removeEventFromCache(eventId, dateTimeStr, phone) {
   if (allEvents.length < initialLength) {
     cache.put(CACHE_KEY_CALENDAR, JSON.stringify(allEvents), CACHE_DURATION);
     console.log(`⚡️ [樂觀取消] 成功從快取移除預約 (釋放時段)`);
+    return true;
   }
+
+  console.warn(`⚠️ [樂觀取消] 快取中找不到要移除的預約，準備改走完整刷新`);
+  return false;
 }
 
 // 預約時呼叫：addEventToCache(start, end, title, description)
@@ -151,6 +155,12 @@ function invalidateCalendarCache() {
   
   // 選擇性：也可以這裡直接呼叫 refreshCalendarCache() 立即重建
   // 但為了回應速度，建議單純清除即可，下次讀取時會自動重建
+}
+
+function refreshCalendarCacheAfterCancellation() {
+  invalidateCalendarCache();
+  Utilities.sleep(300);
+  refreshCalendarCache();
 }
 
 /**

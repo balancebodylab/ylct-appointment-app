@@ -76,13 +76,20 @@ function createBooking(date, time, duration, name, phone, lineUserId, plan, useT
 function cancelBooking(data) {
   try {
     // 1. 【樂觀刪除快取】
-    removeEventFromCache(data.eventId, data.dateTimeStr, data.phone);
+    const removedFromCache = removeEventFromCache(data.eventId, data.dateTimeStr, data.phone);
 
     // 2. 立即更新預約紀錄與 Google Calendar，再把通知交給背景任務
     ensureCancelNotificationMessages_(data);
     data.bookingRecordRow = writeBookingRecordRow_(data, '已取消');
     data.bookingRecordWritten = true;
     addTaskToQueue('processCancelLogAndNotify', data);
+
+    // 3. 保守刷新快取，避免前端下一次查詢仍拿到取消前的舊預約
+    if (typeof refreshCalendarCacheAfterCancellation === 'function') {
+      refreshCalendarCacheAfterCancellation();
+    } else if (!removedFromCache && typeof invalidateCalendarCache === 'function') {
+      invalidateCalendarCache();
+    }
 
     return { success: true };
   } catch (e) {
