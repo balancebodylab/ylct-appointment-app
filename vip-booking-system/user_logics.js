@@ -82,28 +82,78 @@ function loginUser(phone) {
 }
 
 // ==========================================
-// 1. 新增：透過 Line ID 登入
+// ==========================================
+// 1. 新增：透過 Line ID 登入 (極速快取版：同時查「總覽」與「名單」)
 // ==========================================
 function loginByLine(lineUserId) {
-  const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName("客戶資料總覽");
-  const data = sheet.getDataRange().getValues();
-  const headers = data[2];
+  if (!lineUserId) return { success: false, message: "無效的 Line ID" };
 
-  // 找出 "Line ID" 在第幾欄
-  let lineColIdx = headers.indexOf("Line ID"); 
-  if (lineColIdx === -1) {
-    return { success: false, message: "系統錯誤：找不到 Line ID 欄位" };
+  // 🚀 【第一層：快取檢查】
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'line_login_' + lineUserId;
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    console.log("⚡️ [快取命中] Line 登入資料來自記憶體");
+    return JSON.parse(cached);
   }
 
-  // 搜尋符合的 Line ID
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][lineColIdx]) === String(lineUserId)) {
-      const userObj = rowToUserObj(data[i], headers);
-      return { success: true, user: userObj };
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  let result = { success: false, message: "找不到會員資料" };
+  
+  // ⏱️ 【第二層：總覽表搜尋】 (具有餘額資訊)
+  const overviewSheet = ss.getSheetByName("客戶資料總覽");
+  if (overviewSheet) {
+    const data = overviewSheet.getDataRange().getValues();
+    const headers = data[2]; // 標題列在 Index 2 (第 3 列)
+    let lineColIdx = headers.indexOf("Line ID");
+    if (lineColIdx === -1) lineColIdx = headers.indexOf("LineID"); 
+
+    if (lineColIdx !== -1) {
+      for (let i = 3; i < data.length; i++) { // 資料從 Index 3 開始
+        if (String(data[i][lineColIdx]) === String(lineUserId)) {
+          console.log("✅ [loginByLine] 於「客戶資料總覽」找到會員");
+          result = { success: true, user: rowToUserObj(data[i], headers) };
+          break;
+        }
+      }
     }
   }
 
-  return { success: false, message: "找不到會員資料" }; // 前端收到這個會跳轉去註冊
+  // ⏱️ 【第三層：名單表搜尋】 (如果總覽沒找到)
+  if (!result.success) {
+    const listSheet = ss.getSheetByName("客戶名單");
+    if (listSheet) {
+      const listData = listSheet.getDataRange().getValues();
+      // 客戶名單 [ID, 姓名, 電話, Line ID, ...] -> Line ID 在 Index 3
+      for (let j = 1; j < listData.length; j++) {
+        if (String(listData[j][3]) === String(lineUserId)) {
+          console.log("✅ [loginByLine] 於「客戶名單」找到會員");
+          const phone = String(listData[j][2] || '').replace(/'/g, '');
+          
+          // 嘗試用電話回頭查總覽 (確保餘額同步)
+          if (phone) {
+            const overviewResult = loginUser(phone);
+            if (overviewResult.success) {
+              result = { success: true, user: { ...overviewResult.user, lineUserId: lineUserId } };
+            } else {
+              result = {
+                success: true,
+                user: { name: listData[j][1], phone: phone, lineUserId: lineUserId, planName: "新客體驗", courseBalance: 0, ticketBalance: 0 }
+              };
+            }
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  // 💾 【寫入快取】 存 20 分鐘
+  if (result.success) {
+    cache.put(cacheKey, JSON.stringify(result), 1200);
+  }
+
+  return result;
 }
 /*
 function loginByLine(data) {
