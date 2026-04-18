@@ -58,7 +58,7 @@ function rowToUserObj(row, headers) {
   };
 }
 
-function testRowToUserObjLineId_() {
+function testRowToUserObjLineId() {
   const headersWithSpace = ['客戶編號', '客戶姓名', '電話', 'Line ID', '方案內容', '總剩餘堂數', '剩餘加時券數量'];
   const row = [1, '小明', '0912345678', 'U123abc', '課程A', 5, 2];
   const userWithSpace = rowToUserObj(row, headersWithSpace);
@@ -79,7 +79,7 @@ function testRowToUserObjLineId_() {
     throw new Error("Expected missing Line ID header to map lineUserId to empty string");
   }
 
-  console.log('testRowToUserObjLineId_: PASS');
+  console.log('testRowToUserObjLineId: PASS');
   console.log('Line ID header:', userWithSpace.lineUserId);
   console.log('LineID header:', userNoSpace.lineUserId);
   console.log('Missing Line ID header:', userWithoutLineId.lineUserId);
