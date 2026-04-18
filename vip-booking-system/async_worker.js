@@ -159,19 +159,43 @@ function getBookingCustomerDirectory_(ss) {
   const customers = {};
   if (!sheet || sheet.getLastRow() < 2) return customers;
 
-  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 7).getValues();
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const col = getBookingCustomerListColumnMap_(headers);
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
   rows.forEach(row => {
-    const id = row[0];
+    const id = row[col.id];
     if (!id) return;
     customers[String(id)] = {
       id: id,
-      name: row[1] || '',
-      phone: normalizeBookingPhoneForSheet_(row[2]),
-      lineId: row[3] == null ? '' : String(row[3]).trim(),
-      source: row[6] == null ? '' : String(row[6]).trim()
+      name: row[col.name] || '',
+      phone: normalizeBookingPhoneForSheet_(row[col.phone]),
+      lineId: row[col.lineId] == null ? '' : String(row[col.lineId]).trim(),
+      source: row[col.source] == null ? '' : String(row[col.source]).trim()
     };
   });
   return customers;
+}
+
+function getBookingCustomerListColumnMap_(headers) {
+  const indexOfAny = (names, fallback) => {
+    for (const name of names) {
+      const index = headers.indexOf(name);
+      if (index !== -1) return index;
+    }
+    return fallback;
+  };
+
+  return {
+    id: indexOfAny(['客戶編號', 'ID'], 0),
+    name: indexOfAny(['客戶稱呼', '姓名'], 1),
+    phone: indexOfAny(['電話'], 2),
+    lineId: indexOfAny(['Line ID', 'LineID'], 3),
+    birthMonth: indexOfAny(['生日月份'], 4),
+    status: indexOfAny(['狀態'], 5),
+    createdAt: indexOfAny(['建立日期', '註冊時間'], 6),
+    source: indexOfAny(['來源'], 7),
+    note: indexOfAny(['備註'], 8)
+  };
 }
 
 function findBookingCustomerForRecord_(bookingRow, customers) {
