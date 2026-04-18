@@ -104,6 +104,9 @@ function cancelBooking(data) {
 function getBookingHistory(phone) {
   if (!phone) return { success: false, error: '缺少電話號碼' };
 
+  const sheetBookings = getBookingHistoryFromSheet_(phone);
+  if (sheetBookings) return { success: true, bookings: sheetBookings };
+
   const cache = CacheService.getScriptCache();
   let cachedJson = cache.get(CACHE_KEY_CALENDAR);
   
@@ -152,4 +155,80 @@ function getBookingHistory(phone) {
 
   result.sort((a, b) => new Date(a.start) - new Date(b.start));
   return { success: true, bookings: result };
+}
+
+function getBookingHistoryFromSheet_(phone) {
+  try {
+    const ss = SpreadsheetApp.openById(SHEET_ID);
+    const sheet = ss.getSheetByName(BOOKING_RECORD_SHEET_NAME);
+    if (!sheet || sheet.getLastRow() < 2) return [];
+
+    const targetPhone = normalizeBookingLookupKey_(normalizeBookingPhoneForSheet_(phone));
+    if (!targetPhone) return [];
+
+    const rowCount = sheet.getLastRow() - 1;
+    const values = sheet.getRange(2, 1, rowCount, BOOKING_RECORD_TOTAL_COLUMNS).getValues();
+    const displays = sheet.getRange(2, 1, rowCount, BOOKING_RECORD_TOTAL_COLUMNS).getDisplayValues();
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const bookings = [];
+    values.forEach((row, index) => {
+      const displayRow = displays[index];
+      const rowPhone = normalizeBookingLookupKey_(row[BOOKING_RECORD_COLUMN.PHONE] || displayRow[BOOKING_RECORD_COLUMN.PHONE]);
+      const status = normalizeBookingStatusForRecord_(row[BOOKING_RECORD_COLUMN.BOOKING_STATUS] || displayRow[BOOKING_RECORD_COLUMN.BOOKING_STATUS]);
+      if (rowPhone !== targetPhone || status === '已取消') return;
+
+      const startAt = combineBookingDateTimeForRecord_(
+        row[BOOKING_RECORD_COLUMN.BOOKING_DATE] || displayRow[BOOKING_RECORD_COLUMN.BOOKING_DATE],
+        displayRow[BOOKING_RECORD_COLUMN.START_TIME] || row[BOOKING_RECORD_COLUMN.START_TIME]
+      );
+      if (!startAt || startAt < todayStart) return;
+
+      const duration = parseBookingNumber_(row[BOOKING_RECORD_COLUMN.DURATION_MINUTES] || displayRow[BOOKING_RECORD_COLUMN.DURATION_MINUTES]) || 50;
+      const endAt = new Date(startAt.getTime() + duration * 60000);
+      const courseDeduction = parseBookingNumber_(row[BOOKING_RECORD_COLUMN.COURSE_DEDUCTION]);
+      const singleBooking = parseBookingNumber_(row[BOOKING_RECORD_COLUMN.SINGLE_BOOKING]);
+      const extraTicket = parseBookingNumber_(row[BOOKING_RECORD_COLUMN.EXTRA_TICKET]);
+      const serviceItem = String(row[BOOKING_RECORD_COLUMN.SERVICE_ITEM] || displayRow[BOOKING_RECORD_COLUMN.SERVICE_ITEM] || '一般課程').trim();
+      const planType = singleBooking > 0 ? 'SINGLE' : 'COURSE';
+      const customPlanName = buildBookingPlanNameFromSheet_(courseDeduction, singleBooking, duration);
+
+      bookings.push({
+        id: String(row[BOOKING_RECORD_COLUMN.CALENDAR_EVENT_ID] || row[BOOKING_RECORD_COLUMN.BOOKING_ID] || ('record_' + (index + 2))),
+        title: serviceItem,
+        start: formatBookingDateTimeForHistory_(startAt),
+        end: formatBookingTimeForHistory_(endAt),
+        realCourseName: serviceItem,
+        customPlanName: customPlanName,
+        plan: planType,
+        duration: duration,
+        useTicket: extraTicket > 0
+      });
+    });
+
+    bookings.sort((a, b) => new Date(a.start.replace(/-/g, '/')) - new Date(b.start.replace(/-/g, '/')));
+    return bookings;
+  } catch (e) {
+    console.warn('⚠️ 從預約紀錄讀取預約失敗，改用 Calendar 快取: ' + e.toString());
+    return null;
+  }
+}
+
+function formatBookingDateTimeForHistory_(date) {
+  return Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm');
+}
+
+function formatBookingTimeForHistory_(date) {
+  return Utilities.formatDate(date, Session.getScriptTimeZone(), 'HH:mm');
+}
+
+function buildBookingPlanNameFromSheet_(courseDeduction, singleBooking, duration) {
+  if (singleBooking > 0) {
+    return '單次預約 (' + duration + '分)';
+  }
+  if (courseDeduction > 1) {
+    return '課程扣抵 (連續' + courseDeduction + '堂 ' + duration + '分)';
+  }
+  return '課程扣抵 (1堂 ' + duration + '分)';
 }
