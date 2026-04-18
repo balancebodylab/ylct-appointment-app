@@ -241,16 +241,14 @@ function registerNewUser(d) {
   sheet.getRange("C:C").setNumberFormat("@");
   
   // 準備要寫入的資料
-  // 假設欄位順序：[姓名, 電話, 方案內容, 剩餘堂數, 抵用卷, Line ID, 備註]
-  // ⚠️ 請依照您實際的 Sheet 欄位順序調整這裡！
-  
-  // 預設新會員資料
+  // 欄位對應：[ID, 姓名, 電話, Line ID, 生日, 註冊時間]
   const newRow = [
     "",
     d.name,           // 姓名
     "'" + d.phone,    // 電話 (加 ' 避免變數字)
-    d.lineUserId,     // 【關鍵】寫入 Line User ID
-    new Date()        // 備註 (註冊時間)
+    d.lineUserId,     // Line User ID
+    d.birthday || "", // 生日 (新加入)
+    new Date()        // 註冊時間
   ];
 
   sheet.appendRow(newRow);
@@ -262,6 +260,7 @@ function registerNewUser(d) {
     user: {
       name: d.name,
       phone: d.phone,
+      lineUserId: d.lineUserId,
       planName: "新客體驗",
       courseBalance: 0,
       ticketBalance: 0
