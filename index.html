@@ -335,6 +335,8 @@ input[type="date"] {
   let isLoginChecked = false; 
   let selectedPlan = '', occupiedDuration = 0, displayDuration = 0, useTicket = false, selectedTime = null, finalPlanDetailName = ""; 
   let currentBookingList = [];
+  let bookingHistoryPollTimer = null;
+  const BOOKING_HISTORY_POLL_MS = 20000;
 
   // ==========================================
   // 🚀 1. 系統初始化
@@ -514,7 +516,10 @@ liff.init({ liffId: MY_LIFF_ID }).then(() => {
     }
 
     renderMain();
-    if (!isNewUser) loadBookingHistory(); 
+    if (!isNewUser) {
+      loadBookingHistory();
+      startBookingHistoryPolling();
+    }
     switchView('view-main');
   }
   // ==========================================
@@ -850,16 +855,51 @@ liff.init({ liffId: MY_LIFF_ID }).then(() => {
     perfLog.end('渲染預約清單');
   }
   
-  function loadBookingHistory() {
-    const listDiv = document.getElementById('bookingList'); if (currentBookingList.length === 0) { listDiv.innerHTML = '<div style="color:var(--text-muted); padding:10px 0;">載入中...</div>'; }
+  function loadBookingHistory(isSilent = false) {
+    if (!currentUser || !currentUser.phone) return Promise.resolve(null);
+
+    const listDiv = document.getElementById('bookingList');
+    if (!isSilent && currentBookingList.length === 0) {
+      listDiv.innerHTML = '<div style="color:var(--text-muted); padding:10px 0;">載入中...</div>';
+    }
     document.getElementById('history-section').style.display = 'block';
     
     perfLog.start('獲取歷史預約 API');
-    sendRequest('getBookingHistory', { phone: currentUser.phone }, true).then(res => {
+    return sendRequest('getBookingHistory', { phone: currentUser.phone }, true).then(res => {
       perfLog.end('獲取歷史預約 API');
       if(res.success) { currentBookingList = res.bookings; renderBookingList(); } else { listDiv.innerHTML = '<div style="color:#c62828; padding:10px 0;">無法讀取紀錄</div>'; }
+      return res;
+    }).catch(err => {
+      perfLog.end('獲取歷史預約 API');
+      if (!isSilent) listDiv.innerHTML = '<div style="color:#c62828; padding:10px 0;">無法讀取紀錄</div>';
+      throw err;
     });
   }
+
+  function startBookingHistoryPolling() {
+    stopBookingHistoryPolling();
+    if (!currentUser || !currentUser.phone || document.hidden) return;
+
+    bookingHistoryPollTimer = setInterval(() => {
+      if (!document.hidden) loadBookingHistory(true);
+    }, BOOKING_HISTORY_POLL_MS);
+  }
+
+  function stopBookingHistoryPolling() {
+    if (bookingHistoryPollTimer) {
+      clearInterval(bookingHistoryPollTimer);
+      bookingHistoryPollTimer = null;
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      stopBookingHistoryPolling();
+    } else if (currentUser && currentUser.phone && !isNewUser) {
+      loadBookingHistory(true);
+      startBookingHistoryPolling();
+    }
+  });
 
 function cancelBooking(eventId, timeStr) {
   // 🔍 關鍵：從目前的預約清單中找出這筆資料，以獲取方案與課程名稱等細節
