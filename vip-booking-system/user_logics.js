@@ -241,13 +241,13 @@ function registerNewUser(d) {
   sheet.getRange("C:C").setNumberFormat("@");
   
   // 準備要寫入的資料
-  // 欄位對應：[ID, 姓名, 電話, Line ID, 生日, 註冊時間]
+  // 欄位對應：[ID, 姓名, 電話, Line ID, 生日月份, 註冊時間]
   const newRow = [
     "",
     d.name,           // 姓名
     "'" + d.phone,    // 電話 (加 ' 避免變數字)
     d.lineUserId,     // Line User ID
-    d.birthday || "", // 生日 (新加入)
+    d.birthday ? d.birthday + "月" : "", // 生日月份 (新加入)
     new Date()        // 註冊時間
   ];
 

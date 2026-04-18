@@ -529,21 +529,10 @@ liff.init({ liffId: MY_LIFF_ID }).then(() => {
     if (!selectedTime) return Swal.fire('提示', '請先選擇時間', 'warning');
 
     if (isNewUser) {
-      // 產生年份 (目前年份往前推 100 年)
-      const currentYear = new Date().getFullYear();
-      let yearOptions = '<option value="">年</option>';
-      for (let y = currentYear; y >= currentYear - 100; y--) {
-        yearOptions += `<option value="${y}">${y}</option>`;
-      }
       // 產生月份
-      let monthOptions = '<option value="">月</option>';
+      let monthOptions = '<option value="">請選擇</option>';
       for (let m = 1; m <= 12; m++) {
-        monthOptions += `<option value="${m}">${m}</option>`;
-      }
-      // 產生日期
-      let dayOptions = '<option value="">日</option>';
-      for (let d = 1; d <= 31; d++) {
-        dayOptions += `<option value="${d}">${d}</option>`;
+        monthOptions += `<option value="${m}">${m} 月</option>`;
       }
 
       Swal.fire({
@@ -554,11 +543,9 @@ liff.init({ liffId: MY_LIFF_ID }).then(() => {
             <input id="swal-name" class="swal2-input" placeholder="您的姓名" value="${lineDisplayName || ''}" style="width: 85%; margin: 10px auto; display: block; font-size:16px;">
             <input id="swal-phone" type="tel" class="swal2-input" placeholder="您的手機號碼" style="width: 85%; margin: 10px auto; display: block; font-size:16px;">
             
-            <p style="font-size: 14px; color: var(--text-muted); margin: 15px 0 5px 25px;">🎂 生日 (選填，生日當月有驚喜喔！)</p>
-            <div style="display: flex; justify-content: center; gap: 5px; width: 85%; margin: 0 auto;">
-              <select id="swal-birth-y" class="swal2-select" style="margin: 0; flex: 1;">${yearOptions}</select>
-              <select id="swal-birth-m" class="swal2-select" style="margin: 0; flex: 1;">${monthOptions}</select>
-              <select id="swal-birth-d" class="swal2-select" style="margin: 0; flex: 1;">${dayOptions}</select>
+            <p style="font-size: 14px; color: var(--text-muted); margin: 15px 0 5px 25px;">🎂 生日月份 (選填，生日當月有驚喜喔！)</p>
+            <div style="width: 85%; margin: 0 auto;">
+              <select id="swal-birth-m" class="swal2-select" style="width: 100%; margin: 0;">${monthOptions}</select>
             </div>
           </div>
         `,
@@ -566,21 +553,14 @@ liff.init({ liffId: MY_LIFF_ID }).then(() => {
         preConfirm: () => {
           const name = document.getElementById('swal-name').value.trim();
           const phone = document.getElementById('swal-phone').value.trim();
-          const y = document.getElementById('swal-birth-y').value;
           const m = document.getElementById('swal-birth-m').value;
-          const d = document.getElementById('swal-birth-d').value;
           
           if (!name || !phone) { Swal.showValidationMessage('請完整填寫姓名與電話'); return false; }
           
-          let birthday = "";
-          if (y && m && d) {
-            birthday = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-          }
-          
-          return { name, phone, birthday };
+          return { name, phone, birthMonth: m };
         }
       }).then(result => {
-        if (result.isConfirmed) executeRegistrationAndBooking(result.value.name, result.value.phone, result.value.birthday);
+        if (result.isConfirmed) executeRegistrationAndBooking(result.value.name, result.value.phone, result.value.birthMonth);
       });
     } else {
       showBookingConfirmDialog();
