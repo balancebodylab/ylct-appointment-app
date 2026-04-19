@@ -1,6 +1,87 @@
 /// ================= 使用者邏輯 (UserLogic v7.9.7 Memory Structure) =================
 
 /**
+ * 在前 N 列中搜尋真正 header 列。
+ * 判斷條件：該列必須同時包含 KEY_HEADERS 全部關鍵欄位（避免被統計數字小標列騙到）。
+ * 回傳 { headerRowIndex, headers, dataStartIndex }；找不到時回傳 null。
+ */
+function locateOverviewHeaderRow_(data, searchRows) {
+  const KEY_HEADERS = ['客戶姓名', '電話'];
+  const limit = Math.min(searchRows || 5, data.length);
+  for (let i = 0; i < limit; i++) {
+    const row = data[i] || [];
+    const normalized = row.map(function(v) { return String(v == null ? '' : v).trim(); });
+    const allFound = KEY_HEADERS.every(function(k) { return normalized.indexOf(k) !== -1; });
+    if (allFound) {
+      return { headerRowIndex: i, headers: row, dataStartIndex: i + 1 };
+    }
+  }
+  return null;
+}
+
+/**
+ * 在 header row 中找指定欄位 index，支援多個別名 + 大小寫/空白容錯。
+ */
+function findHeaderColumn_(headers, aliases) {
+  for (let a = 0; a < aliases.length; a++) {
+    const idx = headers.indexOf(aliases[a]);
+    if (idx !== -1) return idx;
+  }
+  const normalized = headers.map(function(h) {
+    return String(h == null ? '' : h).trim().toLowerCase().replace(/\s+/g, '');
+  });
+  for (let a = 0; a < aliases.length; a++) {
+    const target = String(aliases[a]).trim().toLowerCase().replace(/\s+/g, '');
+    const idx = normalized.indexOf(target);
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}
+
+function findInCustomerList_(phone) {
+  const normalizedInput = normalizeCustomerPhoneForList_(phone);
+  const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName("客戶名單");
+  if (!sheet) return null;
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0] || [];
+  const col = getCustomerListColumnMap_(headers);
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i] || [];
+    if (normalizeCustomerPhoneForList_(row[col.phone]) === normalizedInput) {
+      return {
+        success: true,
+        user: {
+          id: row[col.id],
+          name: row[col.name],
+          phone: normalizedInput,
+          lineUserId: String(row[col.lineId] || ''),
+          planName: '新客體驗',
+          courseBalance: 0,
+          ticketBalance: 0,
+          courses: 0,
+          tickets: 0,
+          defaultDuration: 0
+        }
+      };
+    }
+  }
+
+  return {
+    success: false,
+    user: {
+      name: '新朋友',
+      phone: phone,
+      courses: 0,
+      tickets: 0,
+      planName: '',
+      defaultDuration: 0
+    }
+  };
+}
+
+/**
  * 讀取使用者資料 (極速版：快取 + 記憶體陣列搜尋)
  */
 function loginUser(phone) {
@@ -16,69 +97,67 @@ function loginUser(phone) {
     return JSON.parse(cachedData);
   }
 
+  const cacheAndReturn = function(result) {
+    cache.put(cacheKey, JSON.stringify(result), 1200);
+    return result;
+  };
+  const fallbackAndCache = function() {
+    const result = findInCustomerList_(phone) || {
+      success: false,
+      user: {
+        name: '新朋友',
+        phone: phone,
+        courses: 0,
+        tickets: 0,
+        planName: '',
+        defaultDuration: 0
+      }
+    };
+    return cacheAndReturn(result);
+  };
+
   // 2. 【第二層加速】一次讀取整張表到 Data Structure (2D Array)
   const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName('客戶資料總覽');
-  if (!sheet) return { success: false, message: 'Users sheet not found' };
+  if (!sheet) return fallbackAndCache();
 
   // 只呼叫一次 API，把整張表讀進記憶體 (這是最耗時的一步，約 0.5s~1s)
   // data 是一個二維陣列 [ [id, name, phone...], [id, name, phone...] ]
   const data = sheet.getDataRange().getValues();
+  const located = locateOverviewHeaderRow_(data, 5);
+  if (!located) return fallbackAndCache();
 
   // 3. 在記憶體中快速查找 (JavaScript 運算極快)
-  // 我們假設電話在第 3 欄 (Index 2)，且資料從第 2 列開始 (Index 1)
-  // 使用 Array.find 進行掃描
-  const foundRow = data.find((row, index) => {
-    if (index === 0) return false; // 跳過標題列
-    if (!row[2]) return false;     // 跳過空電話
-    
+  const phoneCol = findHeaderColumn_(located.headers, ['電話']);
+  if (phoneCol === -1) return fallbackAndCache();
+
+  for (let i = located.dataStartIndex; i < data.length; i++) {
+    const row = data[i] || [];
+    if (!row[phoneCol]) continue;
+
     // 比對時一律把符號拿掉，確保格式相容 (例如 0912-345-678 vs 0912345678)
-    const rowPhone = row[2].toString().replace(/\D/g, '');
-    return rowPhone === cleanInputPhone;
-  });
+    const rowPhone = row[phoneCol].toString().replace(/\D/g, '');
+    if (rowPhone !== cleanInputPhone) continue;
 
-  if (foundRow) {
-    // 找到資料，建立物件
-    // 欄位對應：[0]ID, [1]姓名, [2]電話, [3]金額, [4]堂數, [5]加時, [6]200券, [7]300券, [8]方案
-    
+    const user = rowToUserObj(row, located.headers);
+
     // 解析課程名稱分鐘數
-    const rawCourseName = foundRow[8] ? foundRow[8].toString() : ''; 
-    let extractedDuration = 0; 
+    const rawCourseName = user.planName ? user.planName.toString() : '';
+    let extractedDuration = 0;
     const match = rawCourseName.match(/(\d+)\s*(分鐘|分|min)/i);
-    if (match) extractedDuration = parseInt(match[1], 10); 
+    if (match) extractedDuration = parseInt(match[1], 10);
 
-    const result = { 
-      success: true, 
-      user: {
-        id: foundRow[0],
-        name: foundRow[1],
-        phone: foundRow[2].toString().replace(/'/g, "").trim(),
-        totalSpent: foundRow[3],
-        courses: parseInt(foundRow[4] || 0),
-        tickets: parseInt(foundRow[5] || 0),
-        voucher200: parseInt(foundRow[6] || 0),
-        voucher300: parseInt(foundRow[7] || 0),
-        planName: rawCourseName,       
-        defaultDuration: extractedDuration 
-    }};
+    const idCol = findHeaderColumn_(located.headers, ['客戶編號']);
+    user.id = idCol === -1 ? '' : row[idCol];
+    user.defaultDuration = extractedDuration;
+
+    const result = { success: true, user: user };
 
     // 4. 寫入快取 (下次連表都不用讀)
-    cache.put(cacheKey, JSON.stringify(result), 1200); // 存 20 分鐘
-
-    return result;
+    return cacheAndReturn(result);
   }
   
   // 查無此人
-  return { 
-    success: false, 
-    user: { 
-      name: '新朋友', 
-      phone: phone, 
-      courses: 0, 
-      tickets: 0, 
-      planName: '', 
-      defaultDuration: 0 
-    }
-  };
+  return fallbackAndCache();
 }
 
 // ==========================================
@@ -104,16 +183,18 @@ function loginByLine(lineUserId) {
   const overviewSheet = ss.getSheetByName("客戶資料總覽");
   if (overviewSheet) {
     const data = overviewSheet.getDataRange().getValues();
-    const headers = data[2]; // 標題列在 Index 2 (第 3 列)
-    let lineColIdx = headers.indexOf("Line ID");
-    if (lineColIdx === -1) lineColIdx = headers.indexOf("LineID"); 
+    const located = locateOverviewHeaderRow_(data, 5);
+    if (located) {
+      const headers = located.headers;
+      const lineColIdx = findHeaderColumn_(headers, ['Line ID', 'LineID', 'LINE ID', 'line id', 'Line Id']);
 
-    if (lineColIdx !== -1) {
-      for (let i = 3; i < data.length; i++) { // 資料從 Index 3 開始
-        if (String(data[i][lineColIdx]) === String(lineUserId)) {
-          console.log("✅ [loginByLine] 於「客戶資料總覽」找到會員");
-          result = { success: true, user: rowToUserObj(data[i], headers) };
-          break;
+      if (lineColIdx !== -1) {
+        for (let i = located.dataStartIndex; i < data.length; i++) {
+          if (String(data[i][lineColIdx]) === String(lineUserId)) {
+            console.log("✅ [loginByLine] 於「客戶資料總覽」找到會員");
+            result = { success: true, user: rowToUserObj(data[i], headers) };
+            break;
+          }
         }
       }
     }
@@ -213,7 +294,12 @@ function loginByLine(data) {
 function completeBinding(lineUserId, phone, rowIndex) {
   try {
     const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName("客戶資料總覽");
-    const headers = sheet.getRange(3, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const allData = sheet.getDataRange().getValues();
+    const located = locateOverviewHeaderRow_(allData, 5);
+    if (!located) {
+      return { success: false, error: '找不到客戶資料總覽 header 列' };
+    }
+    const headers = located.headers;
     
     const colIdx = {
       phone: headers.indexOf("電話") + 1,
@@ -334,4 +420,108 @@ function getCustomerListColumnMap_(headers) {
     source: indexOfAny(["來源"], 7),
     note: indexOfAny(["備註"], 8)
   };
+}
+
+function testLocateOverviewHeaderRow() {
+  const firstRowHeader = locateOverviewHeaderRow_([
+    ['客戶姓名', '電話'],
+    ['小明', '0912']
+  ], 5);
+  if (!firstRowHeader || firstRowHeader.headerRowIndex !== 0 || firstRowHeader.dataStartIndex !== 1) {
+    throw new Error('Expected header at index 0 with dataStartIndex 1');
+  }
+
+  const realShapeHeader = locateOverviewHeaderRow_([
+    ['筋摩 x 獵人客戶資料總覽'],
+    ['', '', '', '', '', '', '', '', '', '', '', '', '', '統計', '206', '83'],
+    ['客戶編號', '客戶姓名', 'Line ID', '電話', '總購買金額', '總剩餘堂數', '剩餘加時券數量', '剩餘$200 介紹抵用券', '剩餘$300 評論抵用券', '課程名稱', '對應課程代碼', '消費次數', '最近消費日期', '備註', '206', '83', '0', '0', '235,940'],
+    ['C001', '小明', 'U123', '0912345678']
+  ], 5);
+  if (!realShapeHeader || realShapeHeader.headerRowIndex !== 2 || realShapeHeader.dataStartIndex !== 3) {
+    throw new Error('Expected real shape header at index 2 with dataStartIndex 3');
+  }
+
+  const missingHeader = locateOverviewHeaderRow_([
+    ['筋摩 x 獵人客戶資料總覽'],
+    ['客戶姓名'],
+    ['電話'],
+    ['206', '83'],
+    ['備註']
+  ], 5);
+  if (missingHeader !== null) {
+    throw new Error('Expected missing header fixture to return null');
+  }
+
+  const statsAfterHeader = locateOverviewHeaderRow_([
+    ['客戶姓名', '電話', '餘額', '206', '83'],
+    ['小明', '0912', 5]
+  ], 5);
+  if (!statsAfterHeader || statsAfterHeader.headerRowIndex !== 0 || statsAfterHeader.dataStartIndex !== 1) {
+    throw new Error('Expected header with trailing stats numbers to match');
+  }
+
+  console.log('testLocateOverviewHeaderRow: PASS');
+}
+
+function testFindHeaderColumn() {
+  if (findHeaderColumn_(['A', 'Line ID', 'B'], ['Line ID']) !== 1) {
+    throw new Error('Expected exact Line ID to resolve index 1');
+  }
+  if (findHeaderColumn_(['A', 'LineID', 'B'], ['Line ID', 'LineID']) !== 1) {
+    throw new Error('Expected LineID alias to resolve index 1');
+  }
+  if (findHeaderColumn_(['A', 'line id', 'B'], ['Line ID']) !== 1) {
+    throw new Error('Expected normalized line id to resolve index 1');
+  }
+  if (findHeaderColumn_(['A', 'B', 'C'], ['Line ID']) !== -1) {
+    throw new Error('Expected missing Line ID to resolve -1');
+  }
+
+  console.log('testFindHeaderColumn: PASS');
+}
+
+function testLoginUserWithHeader() {
+  const fakeData = [
+    ['筋摩 x 獵人客戶資料總覽'],
+    ['', '', '', '', '', '', '', '', '', '', '', '', '', '統計', '206', '83'],
+    ['客戶姓名', '電話', '客戶編號', '課程名稱', '總剩餘堂數', '剩餘加時券數量'],
+    ['小明', '0912-345-678', 'C001', '筋膜放鬆 50 分鐘', 8, 2]
+  ];
+  const located = locateOverviewHeaderRow_(fakeData, 5);
+  if (!located || located.dataStartIndex !== 3) {
+    throw new Error('Expected fake login data header to be located');
+  }
+
+  const phoneCol = findHeaderColumn_(located.headers, ['電話']);
+  if (phoneCol !== 1) {
+    throw new Error('Expected phone column to follow reordered header index 1');
+  }
+
+  const cleanInputPhone = '0912345678';
+  let foundRow = null;
+  for (let i = located.dataStartIndex; i < fakeData.length; i++) {
+    const rowPhone = String(fakeData[i][phoneCol] || '').replace(/\D/g, '');
+    if (rowPhone === cleanInputPhone) {
+      foundRow = fakeData[i];
+      break;
+    }
+  }
+  if (!foundRow) {
+    throw new Error('Expected fake login data to find matching phone row');
+  }
+
+  const user = rowToUserObj(foundRow, located.headers);
+  const idCol = findHeaderColumn_(located.headers, ['客戶編號']);
+  const durationMatch = String(user.planName || '').match(/(\d+)\s*(分鐘|分|min)/i);
+  user.id = idCol === -1 ? '' : foundRow[idCol];
+  user.defaultDuration = durationMatch ? parseInt(durationMatch[1], 10) : 0;
+
+  if (user.id !== 'C001' || user.name !== '小明' || user.phone !== '0912-345-678') {
+    throw new Error('Expected user object to preserve id, name, and phone');
+  }
+  if (user.courseBalance !== 8 || user.ticketBalance !== 2 || user.defaultDuration !== 50) {
+    throw new Error('Expected user object to preserve balances and parse duration');
+  }
+
+  console.log('testLoginUserWithHeader: PASS');
 }
