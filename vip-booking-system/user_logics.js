@@ -124,11 +124,12 @@ function loginByLine(lineUserId) {
     const listSheet = ss.getSheetByName("客戶名單");
     if (listSheet) {
       const listData = listSheet.getDataRange().getValues();
-      // 客戶名單 [ID, 姓名, 電話, Line ID, ...] -> Line ID 在 Index 3
+      const listHeaders = listData[0] || [];
+      const listCols = getCustomerListColumnMap_(listHeaders);
       for (let j = 1; j < listData.length; j++) {
-        if (String(listData[j][3]) === String(lineUserId)) {
+        if (String(listData[j][listCols.lineId]) === String(lineUserId)) {
           console.log("✅ [loginByLine] 於「客戶名單」找到會員");
-          const phone = String(listData[j][2] || '').replace(/'/g, '');
+          const phone = String(listData[j][listCols.phone] || '').replace(/'/g, '');
           
           // 嘗試用電話回頭查總覽 (確保餘額同步)
           if (phone) {
@@ -138,7 +139,7 @@ function loginByLine(lineUserId) {
             } else {
               result = {
                 success: true,
-                user: { name: listData[j][1], phone: phone, lineUserId: lineUserId, planName: "新客體驗", courseBalance: 0, ticketBalance: 0 }
+                user: { name: listData[j][listCols.name], phone: phone, lineUserId: lineUserId, planName: "新客體驗", courseBalance: 0, ticketBalance: 0 }
               };
             }
           }
@@ -239,20 +240,50 @@ function registerNewUser(d) {
   const ss = SpreadsheetApp.openById(SHEET_ID);
   const sheet = ss.getSheetByName("客戶名單");
   sheet.getRange("C:C").setNumberFormat("@");
-  
-  // 準備要寫入的資料
-  // 欄位對應：[ID, 姓名, 電話, Line ID, 生日月份, 註冊時間]
-  const newRow = [
-    "",
-    d.name,           // 姓名
-    "'" + d.phone,    // 電話 (加 ' 避免變數字)
-    d.lineUserId,     // Line User ID
-    d.birthday ? d.birthday + "月" : "", // 生日月份 (新加入)
-    new Date()        // 註冊時間
-  ];
 
-  sheet.appendRow(newRow);
-  sheet.getRange(sheet.getLastRow(), 3).setNumberFormat("@");
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const col = getCustomerListColumnMap_(headers);
+  const lastRow = sheet.getLastRow();
+  const rowCount = Math.max(lastRow - 1, 0);
+  const rows = rowCount > 0 ? sheet.getRange(2, 1, rowCount, headers.length).getValues() : [];
+  const cleanPhone = normalizeCustomerPhoneForList_(d.phone);
+  const cleanLineId = String(d.lineUserId || '').trim();
+  let targetRowNumber = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    const rowPhone = normalizeCustomerPhoneForList_(rows[i][col.phone]);
+    const rowLineId = String(rows[i][col.lineId] || '').trim();
+    if ((cleanPhone && rowPhone === cleanPhone) || (cleanLineId && rowLineId === cleanLineId)) {
+      targetRowNumber = i + 2;
+      break;
+    }
+  }
+
+  if (targetRowNumber) {
+    const existing = sheet.getRange(targetRowNumber, 1, 1, headers.length).getValues()[0];
+    existing[col.name] = existing[col.name] || d.name;
+    existing[col.phone] = "'" + cleanPhone;
+    existing[col.lineId] = cleanLineId || existing[col.lineId];
+    if (d.birthday) existing[col.birthMonth] = d.birthday + "月";
+    existing[col.status] = existing[col.status] || "正常";
+    existing[col.source] = existing[col.source] || "LIFF";
+    sheet.getRange(targetRowNumber, 1, 1, headers.length).setValues([existing]);
+    sheet.getRange(targetRowNumber, col.phone + 1).setNumberFormat("@").setValue(cleanPhone);
+  } else {
+    const newRow = new Array(headers.length).fill("");
+    newRow[col.id] = getNextCustomerIdForList_(rows, col.id);
+    newRow[col.name] = d.name;
+    newRow[col.phone] = "'" + cleanPhone;
+    newRow[col.lineId] = cleanLineId;
+    newRow[col.birthMonth] = d.birthday ? d.birthday + "月" : "";
+    newRow[col.status] = "正常";
+    newRow[col.createdAt] = new Date();
+    newRow[col.source] = "LIFF";
+
+    sheet.appendRow(newRow);
+    targetRowNumber = sheet.getLastRow();
+    sheet.getRange(targetRowNumber, col.phone + 1).setNumberFormat("@").setValue(cleanPhone);
+  }
 
   // 註冊完直接回傳會員物件，讓前端不用再登入一次
   return { 
@@ -265,5 +296,42 @@ function registerNewUser(d) {
       courseBalance: 0,
       ticketBalance: 0
     }
+  };
+}
+
+function normalizeCustomerPhoneForList_(value) {
+  const digits = String(value == null ? '' : value).replace(/^'/, '').replace(/\D/g, '');
+  if (digits.length === 9 && digits.charAt(0) === '9') return '0' + digits;
+  return digits;
+}
+
+function getNextCustomerIdForList_(rows, idIndex) {
+  let maxId = 813;
+  rows.forEach(row => {
+    const id = parseInt(String(row[idIndex] || '').trim(), 10);
+    if (!isNaN(id)) maxId = Math.max(maxId, id);
+  });
+  return maxId + 10;
+}
+
+function getCustomerListColumnMap_(headers) {
+  const indexOfAny = (names, fallback) => {
+    for (const name of names) {
+      const index = headers.indexOf(name);
+      if (index !== -1) return index;
+    }
+    return fallback;
+  };
+
+  return {
+    id: indexOfAny(["客戶編號", "ID"], 0),
+    name: indexOfAny(["客戶稱呼", "姓名"], 1),
+    phone: indexOfAny(["電話"], 2),
+    lineId: indexOfAny(["Line ID", "LineID"], 3),
+    birthMonth: indexOfAny(["生日月份"], 4),
+    status: indexOfAny(["狀態"], 5),
+    createdAt: indexOfAny(["建立日期", "註冊時間"], 6),
+    source: indexOfAny(["來源"], 7),
+    note: indexOfAny(["備註"], 8)
   };
 }
