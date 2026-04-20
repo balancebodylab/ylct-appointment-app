@@ -1,15 +1,17 @@
 function testMealProtection() {
-  console.log("🍱 開始測試用餐時間保護機制 (16:00-20:00, 至少保留30分)...");
+  console.log("🍱 開始測試用餐時間保護機制...");
 
   const TEST_DATE = "2026-01-15"; // 父親節測試
+  const TEST_DAY = new Date(TEST_DATE + 'T00:00:00+08:00').getDay();
+  const windows = getProtectionWindows(TEST_DAY);
+  console.log("目前餐保護視窗設定：", windows);
   
   // 1. 清除舊快取與資料
   const cache = CacheService.getScriptCache();
   cache.remove(`slots_v4_${TEST_DATE}_60`); 
   
   // 假設情境：
-  // 用餐區間：16:00 - 20:00
-  // 系統要求：必須保留一段連續 30 分鐘的空檔
+  // 用餐區間與最短空檔由「餐保護視窗」工作表提供
   
   console.log("🔍 模擬查詢: 客人想預約 16:15 - 17:15 (60分)");
   // 分析：
