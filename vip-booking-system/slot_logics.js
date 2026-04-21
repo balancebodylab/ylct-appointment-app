@@ -45,7 +45,8 @@ function getAvailableSlots(dateStr, durationValue) {
   const duration = parseInt(durationValue);
   const durationMs = duration * 60 * 1000;
   const minBookingTime = now.getTime() + (60 * 60 * 1000); 
-  const specialRules = getSpecialRules(day, duration);
+  const ruleDuration = getRuleDurationMinutes_(duration);
+  const specialRules = getSpecialRules(day, ruleDuration);
 
   // --- 4. 特殊邏輯 A：早鳥連動 ---
   specialRules
@@ -158,4 +159,10 @@ function parseSlotTime_(timeStr) {
 
 function formatSlotTime_(hour, minute) {
   return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+}
+
+function getRuleDurationMinutes_(durationMinutes) {
+  const duration = parseInt(durationMinutes, 10);
+  const buffer = typeof BUFFER_MINUTES !== 'undefined' ? BUFFER_MINUTES : 0;
+  return duration > buffer ? duration - buffer : duration;
 }
