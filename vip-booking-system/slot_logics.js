@@ -29,14 +29,10 @@ function getAvailableSlots(dateStr, durationValue) {
   }
 
   // --- 2. 基礎營業時間 ---
-  let startH, endH;
-  if (day === 1) { 
-    startH = 10; endH = 17; 
-  } else if (day === 0) {
-    startH = 12; endH = 17;
-  } else {
-    startH = 14; endH = 22;
-  }
+  const businessHours = getBusinessHours(day);
+  if (!businessHours.isOpen) return { status: 'FULL', slots: [] };
+  const startH = businessHours.startH;
+  const endH = businessHours.endH;
 
   // --- 3. 取得行程資料 ---
   const allEvents = getEventsWithCache(selectedDate, nextDay);
@@ -49,34 +45,40 @@ function getAvailableSlots(dateStr, durationValue) {
   const duration = parseInt(durationValue);
   const durationMs = duration * 60 * 1000;
   const minBookingTime = now.getTime() + (60 * 60 * 1000); 
+  const ruleDuration = getRuleDurationMinutes_(duration);
+  const specialRules = getSpecialRules(day, ruleDuration);
 
   // --- 4. 特殊邏輯 A：早鳥連動 ---
-  if (day >= 2 && day <= 6 && duration === 80) {
-    const target1500Time = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 15, 0, 0).getTime();
-    const hasBookingAt1500 = busyRanges.some(r => Math.abs(r.start - target1500Time) < 1000);
+  specialRules
+    .filter(rule => rule.type === 'EARLY_BIRD' && rule.triggerCondition === '當日15:00已被預約')
+    .forEach(rule => {
+      const target1500Time = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 15, 0, 0).getTime();
+      const hasBookingAt1500 = busyRanges.some(r => Math.abs(r.start - target1500Time) < 1000);
+      const openSlot = parseSlotTime_(rule.openSlot);
+      if (!openSlot) return;
 
-    if (hasBookingAt1500) {
-      let sTime = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 13, 30, 0).getTime();
-      let eTime = sTime + durationMs;
-      
-      if (sTime >= minBookingTime) {
-         const isBusy = busyRanges.some(r => sTime < r.end && eTime > r.start);
-         if (!isBusy) slots.push("13:30");
+      if (hasBookingAt1500) {
+        let sTime = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), openSlot.hour, openSlot.minute, 0).getTime();
+        let eTime = sTime + durationMs;
+
+        if (sTime >= minBookingTime) {
+          const isBusy = busyRanges.some(r => sTime < r.end && eTime > r.start);
+          if (!isBusy && !slots.includes(rule.openSlot)) slots.push(rule.openSlot);
+        }
       }
-    }
-  }
+    });
 
   // --- 5. 休息區間設定 (優化：將時間預先轉為毫秒，避免在迴圈內重複計算) ---
-  let activeWindows = [];
-  if (day !== 1 && typeof PROTECTION_WINDOWS !== 'undefined') {
-    activeWindows = PROTECTION_WINDOWS.map(w => ({
-      startMs: new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), w.start, 0, 0).getTime(),
-      endMs: new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), w.end, 0, 0).getTime()
-    }));
-  }
+  const activeWindows = getProtectionWindows(day).map(w => ({
+    startMs: new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), w.startH, w.startM, 0).getTime(),
+    endMs: new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), w.endH, w.endM, 0).getTime(),
+    minGapMs: w.minGapMinutes * 60 * 1000
+  }));
 
-  const minMealDurationMs = (typeof MIN_MEAL_DURATION !== 'undefined' ? MIN_MEAL_DURATION : 30) * 60 * 1000;
   const limitTimeMs = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), endH, 0, 0).getTime();
+  const nightExtendSlots = specialRules
+    .filter(rule => rule.type === 'NIGHT_EXTEND')
+    .map(rule => rule.openSlot);
 
   // --- 6. 標準時段掃描 ---
   for (let h = startH; h < endH; h++) {
@@ -87,7 +89,7 @@ function getAvailableSlots(dateStr, durationValue) {
       let isOvertime = eTime > limitTimeMs;
       
       // 特殊邏輯 B：夜間加班
-      if (isOvertime && h === 21 && m === 0 && duration === 80) {    
+      if (isOvertime && nightExtendSlots.includes(formatSlotTime_(h, m))) {
         isOvertime = false; 
       }
 
@@ -111,17 +113,17 @@ function getAvailableSlots(dateStr, durationValue) {
           let lastEnd = win.startMs;
           
           for (let r of rangesInWindow) {
-            if (r.start - lastEnd >= minMealDurationMs) { hasSafeBreak = true; break; }
+            if (r.start - lastEnd >= win.minGapMs) { hasSafeBreak = true; break; }
             lastEnd = Math.max(lastEnd, r.end);
           }
-          if (!hasSafeBreak && (win.endMs - lastEnd >= minMealDurationMs)) hasSafeBreak = true;
+          if (!hasSafeBreak && (win.endMs - lastEnd >= win.minGapMs)) hasSafeBreak = true;
           if (!hasSafeBreak) { violatesMealRule = true; break; }
         }
       }
       if (violatesMealRule) continue; 
 
       // 優化：拔除緩慢的 Utilities.formatDate，改用原生 JS 高速字串補零
-      let timeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+      let timeStr = formatSlotTime_(h, m);
       
       // 避免重複加入 (例如 13:30 在早鳥邏輯已經被加入過)
       if (!slots.includes(timeStr)) {
@@ -130,6 +132,37 @@ function getAvailableSlots(dateStr, durationValue) {
     }
   }
 
+  nightExtendSlots.forEach(slot => {
+    const openSlot = parseSlotTime_(slot);
+    if (!openSlot || slots.includes(slot)) return;
+
+    const sTime = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), openSlot.hour, openSlot.minute, 0).getTime();
+    const eTime = sTime + durationMs;
+    if (sTime < minBookingTime) return;
+
+    const isBusy = busyRanges.some(r => sTime < r.end && eTime > r.start);
+    if (!isBusy) slots.push(slot);
+  });
+
   slots.sort();
   return { status: 'OK', slots: slots };
+}
+
+function parseSlotTime_(timeStr) {
+  const match = String(timeStr || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  return {
+    hour: parseInt(match[1], 10),
+    minute: parseInt(match[2], 10)
+  };
+}
+
+function formatSlotTime_(hour, minute) {
+  return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+}
+
+function getRuleDurationMinutes_(durationMinutes) {
+  const duration = parseInt(durationMinutes, 10);
+  const buffer = typeof BUFFER_MINUTES !== 'undefined' ? BUFFER_MINUTES : 0;
+  return duration > buffer ? duration - buffer : duration;
 }
