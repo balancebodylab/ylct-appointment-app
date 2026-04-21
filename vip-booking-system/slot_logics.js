@@ -131,6 +131,18 @@ function getAvailableSlots(dateStr, durationValue) {
     }
   }
 
+  nightExtendSlots.forEach(slot => {
+    const openSlot = parseSlotTime_(slot);
+    if (!openSlot || slots.includes(slot)) return;
+
+    const sTime = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), openSlot.hour, openSlot.minute, 0).getTime();
+    const eTime = sTime + durationMs;
+    if (sTime < minBookingTime) return;
+
+    const isBusy = busyRanges.some(r => sTime < r.end && eTime > r.start);
+    if (!isBusy) slots.push(slot);
+  });
+
   slots.sort();
   return { status: 'OK', slots: slots };
 }
