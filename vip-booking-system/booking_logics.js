@@ -9,65 +9,103 @@
 // ==========================================
 function createBooking(date, time, duration, name, phone, lineUserId, plan, useTicket, customPlanName, realCourseName) {
   const tStart = new Date().getTime(); 
-  
-  // 1. 🔍 規範化名稱與方案
-  let courseName = realCourseName || customPlanName || '一般預約'; 
-  let planContent = customPlanName; 
-  if (!planContent) {
-    planContent = (plan === 'COURSE' ? '課程扣抵' : '單次預約');
-    if (useTicket) planContent += " + 結構調整抵用卷";
+  const lock = LockService.getScriptLock();
+
+  try {
+    lock.waitLock(15000);
+    console.log('🔒 [createBooking] 已取得 ScriptLock');
+  } catch (lockErr) {
+    console.warn('⚠️ [createBooking] 取 lock 失敗：' + lockErr);
+    return { success: false, error: '系統忙碌中，請稍後再試' };
   }
 
-  const durationInt = parseInt(duration);
-  // 核心邏輯：計算實際服務時間（扣除轉場時間）
-  const serviceDuration = durationInt - (plan === 'COURSE' && planContent.includes('2堂') ? 20 : 10);
-  if (plan === 'SINGLE') {
-    courseName = planContent.indexOf('80') !== -1 ? '功能性運動按摩 80 分鐘' : '超人氣運動按摩 50 分鐘';
+  try {
+    // 1. 🔍 規範化名稱與方案
+    let courseName = realCourseName || customPlanName || '一般預約'; 
+    let planContent = customPlanName; 
+    if (!planContent) {
+      planContent = (plan === 'COURSE' ? '課程扣抵' : '單次預約');
+      if (useTicket) planContent += " + 結構調整抵用卷";
+    }
+
+    const durationInt = parseInt(duration);
+    // 核心邏輯：計算實際服務時間（扣除轉場時間）
+    const serviceDuration = durationInt - (plan === 'COURSE' && planContent.includes('2堂') ? 20 : 10);
+    if (plan === 'SINGLE') {
+      courseName = planContent.indexOf('80') !== -1 ? '功能性運動按摩 80 分鐘' : '超人氣運動按摩 50 分鐘';
+    }
+    const ticketVal = useTicket ? 1 : 0;
+    const weekday = getDayOfWeekCN(date);
+
+    const start = new Date(date.replace(/-/g, '/') + ' ' + time + ':00'); 
+    const end = new Date(start.getTime() + durationInt * 60000);
+    const startMs = start.getTime();
+    const endMs = end.getTime();
+
+    const cache = CacheService.getScriptCache();
+    let cachedJson = cache.get(CACHE_KEY_CALENDAR);
+
+    if (!cachedJson) {
+      refreshCalendarCache();
+      cachedJson = cache.get(CACHE_KEY_CALENDAR);
+    }
+
+    if (!cachedJson) {
+      console.warn('⚠️ [createBooking] 快取為空，略過 lock 內衝突檢查');
+    } else {
+      const allEvents = JSON.parse(cachedJson);
+      const busyRanges = allEvents
+        .filter(e => (e.t || '').includes('[預約]'))
+        .map(e => ({ start: new Date(e.s).getTime(), end: new Date(e.e).getTime() }));
+      const hasConflict = busyRanges.some(r => startMs < r.end && endMs > r.start);
+
+      if (hasConflict) {
+        console.warn(`⚠️ [createBooking] 時段衝突，已拒絕預約：${date} ${time}`);
+        return { success: false, error: '該時段剛被預約，請選其他時段' };
+      }
+    }
+
+    // 🏷️ 日曆顯示標題
+    const title = `[預約] ${name}`;
+    
+    // 📝 關鍵：描述欄位是系統的「唯一事實來源」，格式必須嚴格執行
+    const descriptionContent = `方案內容：${planContent}\n` +
+                               `課程名稱：${courseName}\n` +
+                               `電話：${phone}\n` +
+                               `LineID：${lineUserId}\n` +
+                               `加時卷：${ticketVal}\n` +
+                               `時間：${serviceDuration}`;
+
+    // 💡 產生智慧 Temp ID
+    const tempId = "temp_" + new Date().getTime() + "_" + Math.floor(Math.random() * 1000);
+
+    // --- 2. 樂觀更新快取 (前端秒看預約成功) ---
+    addEventToCache(start, end, title, descriptionContent, tempId);
+
+    // 🛠️ 準備預約紀錄 Sheet 資料
+    const notifyTaskData = {
+      lineUserId: lineUserId, 
+      name: name, 
+      phone: phone, 
+      dateTime: date + ' ' + time,
+      courseName: courseName, 
+      planContent: planContent,
+      courseDeduction: (plan === 'COURSE' ? 1 : 0),
+      singleCount: (plan === 'SINGLE' ? 1 : 0),
+      ticketVal: ticketVal,
+      serviceDuration: serviceDuration,
+      adminMsg: `🎉 預約成功通知\n\n🔹 姓名｜ ${name}\n🔹 聯絡電話｜ ${phone}\n🔹 課程方案｜ ${serviceDuration}分鐘 （${planContent}）\n🔹 確認時間｜ ${date} ${weekday} ${time}`,
+      userMsg: `您好 ${name}，您的預約已成功！\n\n📅 詳情：\n🔹 姓名｜ ${name}\n🔹 課程｜ ${serviceDuration}分鐘（${planContent}）\n🔹 時間｜ ${date} ${weekday} ${time}\n\n期待您的光臨！`
+    };
+    notifyTaskData.bookingRecordRow = writeBookingRecordRow_(notifyTaskData, '預約成功');
+    notifyTaskData.bookingRecordWritten = true;
+    addTaskToQueue('processCreateLogAndNotify', notifyTaskData);
+
+    console.log(`🏁 [createBooking] 處理完成，耗時: ${new Date().getTime() - tStart} ms`);
+    return { success: true, eventId: tempId };
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
   }
-  const ticketVal = useTicket ? 1 : 0;
-  const weekday = getDayOfWeekCN(date);
-
-  const start = new Date(date.replace(/-/g, '/') + ' ' + time + ':00'); 
-  const end = new Date(start.getTime() + durationInt * 60000);
-
-  // 🏷️ 日曆顯示標題
-  const title = `[預約] ${name}`;
-  
-  // 📝 關鍵：描述欄位是系統的「唯一事實來源」，格式必須嚴格執行
-  const descriptionContent = `方案內容：${planContent}\n` +
-                             `課程名稱：${courseName}\n` +
-                             `電話：${phone}\n` +
-                             `LineID：${lineUserId}\n` +
-                             `加時卷：${ticketVal}\n` +
-                             `時間：${serviceDuration}`;
-
-  // 💡 產生智慧 Temp ID
-  const tempId = "temp_" + new Date().getTime() + "_" + Math.floor(Math.random() * 1000);
-
-  // --- 2. 樂觀更新快取 (前端秒看預約成功) ---
-  addEventToCache(start, end, title, descriptionContent, tempId);
-
-  // 🛠️ 準備預約紀錄 Sheet 資料
-  const notifyTaskData = {
-    lineUserId: lineUserId, 
-    name: name, 
-    phone: phone, 
-    dateTime: date + ' ' + time,
-    courseName: courseName, 
-    planContent: planContent,
-    courseDeduction: (plan === 'COURSE' ? 1 : 0),
-    singleCount: (plan === 'SINGLE' ? 1 : 0),
-    ticketVal: ticketVal,
-    serviceDuration: serviceDuration,
-    adminMsg: `🎉 預約成功通知\n\n🔹 姓名｜ ${name}\n🔹 聯絡電話｜ ${phone}\n🔹 課程方案｜ ${serviceDuration}分鐘 （${planContent}）\n🔹 確認時間｜ ${date} ${weekday} ${time}`,
-    userMsg: `您好 ${name}，您的預約已成功！\n\n📅 詳情：\n🔹 姓名｜ ${name}\n🔹 課程｜ ${serviceDuration}分鐘（${planContent}）\n🔹 時間｜ ${date} ${weekday} ${time}\n\n期待您的光臨！`
-  };
-  notifyTaskData.bookingRecordRow = writeBookingRecordRow_(notifyTaskData, '預約成功');
-  notifyTaskData.bookingRecordWritten = true;
-  addTaskToQueue('processCreateLogAndNotify', notifyTaskData);
-
-  console.log(`🏁 [createBooking] 處理完成，耗時: ${new Date().getTime() - tStart} ms`);
-  return { success: true, eventId: tempId };
 }
 
 // ==========================================
